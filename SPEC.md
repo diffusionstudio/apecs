@@ -24,15 +24,15 @@
 
 ## 2. Concepts
 
-| Concept | What it is |
-|---|---|
-| **Trait** | A named, typed piece of data (or a tag). Declared once globally. |
-| **Field** | One column of a trait. First-class and addressable: `Position.x`. |
-| **Entity** | A 52-bit packed number identifying a row. Not an object. |
-| **World** | An isolated container of entities, archetypes, and trait storage. |
+| Concept       | What it is                                                           |
+| ------------- | -------------------------------------------------------------------- |
+| **Trait**     | A named, typed piece of data (or a tag). Declared once globally.     |
+| **Field**     | One column of a trait. First-class and addressable: `Position.x`.    |
+| **Entity**    | A 52-bit packed number identifying a row. Not an object.             |
+| **World**     | An isolated container of entities, archetypes, and trait storage.    |
 | **Archetype** | The set of entities sharing exactly one trait set. Owns the columns. |
-| **Query** | A cached, incrementally-maintained list of matching archetypes. |
-| **Relation** | A trait parameterised by a target entity. |
+| **Query**     | A cached, incrementally-maintained list of matching archetypes.      |
+| **Relation**  | A trait parameterised by a target entity.                            |
 
 ---
 
@@ -59,17 +59,17 @@ The argument carries **both the shape and the defaults**. Every entity that gain
 
 Bare JavaScript values infer a storage type. Branded markers override it. All markers type as their underlying primitive, so `Position.x` is `number` to TypeScript.
 
-| Declaration | Column | Notes |
-|---|---|---|
-| `0` | `Float64Array` | default for numbers |
-| `f32(0)`, `f64(0)` | `Float32Array`, `Float64Array` | |
-| `i8/i16/i32(0)` | `Int8Array`, `Int16Array`, `Int32Array` | |
-| `u8/u16/u32(0)` | `Uint8Array`, `Uint16Array`, `Uint32Array` | |
-| `false` | `Uint8Array` | `0`/`1`, exposed as `boolean` |
-| `''` | `Array<string>` | boxed |
-| `eid(0)` | `Float64Array` | entity handle; auto-patched on despawn (§8.5) |
-| plain object | flattened | `{ pos: { x: 0 } }` → column `pos.x` |
-| anything else | `Array<T>` | boxed; dev-mode warning suggesting an AoS trait |
+| Declaration        | Column                                     | Notes                                           |
+| ------------------ | ------------------------------------------ | ----------------------------------------------- |
+| `0`                | `Float64Array`                             | default for numbers                             |
+| `f32(0)`, `f64(0)` | `Float32Array`, `Float64Array`             |                                                 |
+| `i8/i16/i32(0)`    | `Int8Array`, `Int16Array`, `Int32Array`    |                                                 |
+| `u8/u16/u32(0)`    | `Uint8Array`, `Uint16Array`, `Uint32Array` |                                                 |
+| `false`            | `Uint8Array`                               | `0`/`1`, exposed as `boolean`                   |
+| `''`               | `Array<string>`                            | boxed                                           |
+| `eid(0)`           | `Float64Array`                             | entity handle; auto-patched on despawn (§8.5)   |
+| plain object       | flattened                                  | `{ pos: { x: 0 } }` → column `pos.x`            |
+| anything else      | `Array<T>`                                 | boxed; dev-mode warning suggesting an AoS trait |
 
 Field order in the schema is the column order and is stable — it is part of the serialization contract.
 
@@ -78,26 +78,26 @@ Field order in the schema is the column order and is stable — it is part of th
 A `Trait` instance exposes **its fields and nothing else** as string-keyed properties. All operations live on `World`, so no method name can ever collide with a schema key. Internals are symbol-keyed.
 
 ```ts
-Position.x            // Field<number>
-Mesh                  // an AoS trait is its own Field — it has exactly one column
+Position.x // Field<number>
+Mesh // an AoS trait is its own Field — it has exactly one column
 ```
 
 Fields address a single column and are accepted everywhere a trait is, when a single value is wanted:
 
 ```ts
-world.get(e, Position.x)              // number — zero allocation
+world.get(e, Position.x) // number — zero allocation
 world.set(e, Position.x, 20)
 world.query(Position).sortBy(Position.x, 'asc')
 ```
 
 ### 3.4 Trait instances
 
-A trait is **callable**. Calling it produces a *trait instance* — a trait paired with an initial value — for use in `spawn` and `add`.
+A trait is **callable**. Calling it produces a _trait instance_ — a trait paired with an initial value — for use in `spawn` and `add`.
 
 ```ts
-Position({ x: 20, y: 10 })    // partial; unspecified fields take the default
-Mesh(existingMesh)            // AoS: adopt an existing reference instead of calling the factory
-IsActive                      // tags are passed bare
+Position({ x: 20, y: 10 }) // partial; unspecified fields take the default
+Mesh(existingMesh) // AoS: adopt an existing reference instead of calling the factory
+IsActive // tags are passed bare
 ```
 
 Implementation note: `new Trait(...)` returns a function with the `Trait` prototype installed, so `instanceof Trait` holds and the object is callable.
@@ -106,8 +106,8 @@ Implementation note: `new Trait(...)` returns a function with the `Trait` protot
 
 ```ts
 new Trait(schema, {
-  storage: 'table' | 'sparse',   // default 'table'
-  track: boolean,                // force change-tick allocation, default false (auto)
+  storage: 'table' | 'sparse', // default 'table'
+  track: boolean, // force change-tick allocation, default false (auto)
 })
 ```
 
@@ -146,8 +146,8 @@ Generation wraps at 4096 recycles; on wrap the id is **retired** rather than reu
 
 ```ts
 const e = world.spawn(Position({ x: 20 }), Velocity, IsActive)
-world.isAlive(e)          // boolean — generation-checked
-world.despawn(e)          // immediate; generation bumped, id queued for recycling
+world.isAlive(e) // boolean — generation-checked
+world.despawn(e) // immediate; generation bumped, id queued for recycling
 ```
 
 `world.despawn` is deliberately not `world.destroy`, which nukes the world itself (§5.5).
@@ -159,11 +159,11 @@ Ids recycle **FIFO** so a freed id is not immediately reissued — stale-handle 
 Every structural operation has a batch form that performs **one** archetype transition for the whole set instead of N.
 
 ```ts
-const swarm = world.spawnMany(10_000, Position, Velocity)   // Float64Array of handles
+const swarm = world.spawnMany(10_000, Position, Velocity) // Float64Array of handles
 world.addMany(swarm, IsActive)
 world.removeMany(swarm, Velocity)
 world.despawnMany(swarm)
-world.despawnMany(world.query(Dead))                        // a query is a valid batch
+world.despawnMany(world.query(Dead)) // a query is a valid batch
 ```
 
 This is a 10–50× win over the naive loop on spawn-heavy workloads and is a first-class part of the API, not an optimisation afterthought.
@@ -173,11 +173,11 @@ This is a 10–50× win over the naive loop on spawn-heavy workloads and is a fi
 ```ts
 world.add(e, Position({ x: 1 }), IsActive)
 world.remove(e, Velocity)
-world.has(e, Position)                 // boolean
-world.get(e, Position)                 // { x, y } — allocates a copy
-world.get(e, Position.x)               // number — no allocation
-world.get(e, Position, out)            // writes into `out`, returns `out` — no allocation
-world.set(e, Position, { x: 5 })       // partial write, fires onChange
+world.has(e, Position) // boolean
+world.get(e, Position) // { x, y } — allocates a copy
+world.get(e, Position.x) // number — no allocation
+world.get(e, Position, out) // writes into `out`, returns `out` — no allocation
+world.set(e, Position, { x: 5 }) // partial write, fires onChange
 world.set(e, Position.x, 5)
 ```
 
@@ -193,8 +193,8 @@ world.set(e, Position.x, 5)
 const world = new World()
 
 const world = new World({
-  pageSize: 4096,        // rows per column page; power of two
-  maxEntities: 1 << 20,  // pre-sizes the entity index; grows if exceeded
+  pageSize: 4096, // rows per column page; power of two
+  maxEntities: 1 << 20, // pre-sizes the entity index; grows if exceeded
 })
 ```
 
@@ -226,12 +226,12 @@ A trait declared at module scope carries a **global id** used only for identity.
 This matters: a project may declare thousands of traits globally, but a world that uses twelve of them keeps twelve-bit archetype masks, not thousand-bit ones.
 
 ```ts
-const Position = new Trait({ x: 0, y: 0 })   // one declaration
+const Position = new Trait({ x: 0, y: 0 }) // one declaration
 
 const a = new World()
 const b = new World()
 a.spawn(Position({ x: 1 }))
-b.spawn(Position({ x: 2 }))                  // fully independent storage
+b.spawn(Position({ x: 2 })) // fully independent storage
 ```
 
 A trait never used in a world costs that world nothing.
@@ -245,11 +245,11 @@ const Time = new Trait({ delta: 0, current: 0 })
 
 world.add(Time)
 world.set(Time, { delta: 0.016 })
-world.get(Time)          // { delta, current }
-world.get(Time.delta)    // number — no allocation
-world.has(Time)          // boolean
+world.get(Time) // { delta, current }
+world.get(Time.delta) // number — no allocation
+world.has(Time) // boolean
 world.remove(Time)
-world.entity              // the world entity handle, if you want it explicitly
+world.entity // the world entity handle, if you want it explicitly
 ```
 
 Overload resolution is unambiguous because `Entity` is a `number` and traits are objects: `world.add(T)` targets the world, `world.add(e, T)` targets an entity.
@@ -265,7 +265,7 @@ Despawns every entity (firing `onRemove` for each), drops all archetypes and col
 Because the world id is packed into every handle, handles minted by a destroyed world will fail liveness checks against the world that later reuses that id — with the caveat that the check is id-based, not instance-based, so an 8-bit world id wrapping around after 256 world creations is the practical limit of that guarantee.
 
 ```ts
-world.clear()   // despawn everything, keep the world, keep archetypes warm
+world.clear() // despawn everything, keep the world, keep archetypes warm
 ```
 
 ---
@@ -275,15 +275,15 @@ world.clear()   // despawn everything, keep the world, keep archetypes warm
 ### 6.1 Terms
 
 ```ts
-world.query(Position, Velocity)               // all of
-world.query(Position, Not(Velocity))          // exclusion
-world.query(Or(Velocity, Renderable))         // disjunction
-world.query(Position, With(IsActive))         // require, but do not read
-world.query(Position, Optional(Velocity))     // match either way; value may be null
-world.query(Position, Changed(Position))      // pull-based change detection
+world.query(Position, Velocity) // all of
+world.query(Position, Not(Velocity)) // exclusion
+world.query(Or(Velocity, Renderable)) // disjunction
+world.query(Position, With(IsActive)) // require, but do not read
+world.query(Position, Optional(Velocity)) // match either way; value may be null
+world.query(Position, Changed(Position)) // pull-based change detection
 world.query(Position, Added(Velocity))
 world.query(Position, Removed(Velocity))
-world.query(Position, Cascade(ChildOf))       // hierarchy-depth ordered (§7.6)
+world.query(Position, Cascade(ChildOf)) // hierarchy-depth ordered (§7.6)
 ```
 
 Modifiers nest: `Or(Not(A), B)`. The term list is evaluated as a boolean expression against each archetype's mask at archetype-creation time, so per-frame matching cost is zero.
@@ -295,8 +295,8 @@ Modifiers nest: `Or(Not(A), B)`. The term list is evaluated as a boolean express
 `world.query(...)` is **O(1) after the first call.** The term list is hashed; the same `QueryResult` object is returned for the same signature. Queries subscribe to archetype creation and maintain their matching-archetype list incrementally. Calling `world.query(Position, Velocity)` every frame inside a system is the intended usage.
 
 ```ts
-const movers = world.createQuery(Position, Velocity)   // explicit hoist, identical object
-movers.dispose()                                        // drop from the cache
+const movers = world.createQuery(Position, Velocity) // explicit hoist, identical object
+movers.dispose() // drop from the cache
 ```
 
 ### 6.3 Result surface
@@ -310,7 +310,7 @@ interface QueryResult<T extends Term[]> {
   [Symbol.iterator](): Iterator<Entity>
   each(fn: (...args: [...Values<T>, Entity]) => void): void
   chunks(): Iterable<Chunk<T>>
-  entities(): Float64Array         // snapshot copy — safe under mutation
+  entities(): Float64Array // snapshot copy — safe under mutation
   sortBy(field: Field, dir?: 'asc' | 'desc'): SortedQueryResult<T>
   sortBy(cmp: (a: Entity, b: Entity) => number): SortedQueryResult<T>
 }
@@ -330,8 +330,8 @@ The simplest form. Yields packed handles; read values through the world.
 
 ```ts
 for (const entity of world.query(Position)) {
-  const p = world.get(entity, Position)        // allocates a copy
-  const x = world.get(entity, Position.x)      // no allocation
+  const p = world.get(entity, Position) // allocates a copy
+  const x = world.get(entity, Position.x) // no allocation
 }
 ```
 
@@ -343,8 +343,12 @@ The ergonomic default. Values arrive as **reused cursor objects** with accessors
 
 ```js
 class PositionCursor {
-  get x()  { return this.__x[this.__i] }
-  set x(v) { this.__x[this.__i] = v }
+  get x() {
+    return this.__x[this.__i]
+  }
+  set x(v) {
+    this.__x[this.__i] = v
+  }
 }
 ```
 
@@ -356,17 +360,19 @@ world.query(Position, Velocity).each((p, v) => {
   p.y += v.y * dt
 })
 
-world.query(Position, Velocity).each((p, v, entity) => { /* handle last */ })
+world.query(Position, Velocity).each((p, v, entity) => {
+  /* handle last */
+})
 ```
 
 **What arrives depends on the trait kind.**:
 
-| Trait kind | `each` yields | Write |
-|---|---|---|
-| struct (`{ x, y }`) | reusable cursor | `p.x = 1` |
-| AoS (factory) | the reference itself | `mesh.position.set(...)`; replace via `world.set` |
-| tag / `Not` / `With` | *nothing* | — |
-| `Optional(T)` | cursor or `null` | — |
+| Trait kind           | `each` yields        | Write                                             |
+| -------------------- | -------------------- | ------------------------------------------------- |
+| struct (`{ x, y }`)  | reusable cursor      | `p.x = 1`                                         |
+| AoS (factory)        | the reference itself | `mesh.position.set(...)`; replace via `world.set` |
+| tag / `Not` / `With` | _nothing_            | —                                                 |
+| `Optional(T)`        | cursor or `null`     | —                                                 |
 
 Cursors are **borrowed**. Retaining one past the callback is a dev-mode error (the cursor is poisoned on exit); in production it silently reads whatever row the cursor was last bound to.
 
@@ -380,7 +386,7 @@ Maximum speed. A chunk is one page of one matching archetype; columns arrive as 
 
 ```ts
 for (const chunk of world.query(Position, Velocity).chunks()) {
-  const p = chunk.get(Position)      // { x: Float32Array, y: Float32Array } — cached view, no alloc
+  const p = chunk.get(Position) // { x: Float32Array, y: Float32Array } — cached view, no alloc
   const v = chunk.get(Velocity)
   const { x, y } = p
   const { x: vx, y: vy } = v
@@ -390,18 +396,18 @@ for (const chunk of world.query(Position, Velocity).chunks()) {
     y[i] += vy[i] * dt
   }
 
-  chunk.markChanged(Position)        // setters were bypassed — mark explicitly
+  chunk.markChanged(Position) // setters were bypassed — mark explicitly
 }
 ```
 
 ```ts
 interface Chunk<T extends Term[]> {
   readonly length: number
-  readonly entities: Float64Array           // packed handles, chunk-local, index-aligned
-  get<S>(trait: Trait<S>): Store<S>         // per-field typed array views for this page
+  readonly entities: Float64Array // packed handles, chunk-local, index-aligned
+  get<S>(trait: Trait<S>): Store<S> // per-field typed array views for this page
   column<V>(field: Field<V>): TypedArrayFor<V>
   entity(i: number): Entity
-  markChanged(trait: Trait, row?: number): void   // whole chunk, or one row
+  markChanged(trait: Trait, row?: number): void // whole chunk, or one row
 }
 ```
 
@@ -420,7 +426,8 @@ This tier does no change tracking and performs no liveness checks. That is the t
 
 ```ts
 const SortIndex = new Trait({ value: 0 })
-for (const e of world.query(Position).sortBy(SortIndex.value, 'asc')) { }
+for (const e of world.query(Position).sortBy(SortIndex.value, 'asc')) {
+}
 ```
 
 Sorting materialises the result into a flat array, which breaks chunk iteration — a sorted query supports Tier 1 and `each`, not `chunks`. `sortBy` returns a distinct cached `QueryResult`, so the unsorted query is unaffected.
@@ -444,13 +451,13 @@ stamp      { structural: number, value: number }
 
 They cost different amounts, so they are tracked separately:
 
-| Level | Trigger | Work on next access |
-|---|---|---|
-| **clean** | nothing changed | none — return the cached `entities` |
-| **resort** | a sort-key value changed | refresh `keys`, re-sort `order` in place — O(n), see below |
+| Level       | Trigger                         | Work on next access                                        |
+| ----------- | ------------------------------- | ---------------------------------------------------------- |
+| **clean**   | nothing changed                 | none — return the cached `entities`                        |
+| **resort**  | a sort-key value changed        | refresh `keys`, re-sort `order` in place — O(n), see below |
 | **rebuild** | the matching entity set changed | rebuild the entity list, refresh `keys`, sort — O(n log n) |
 
-**Structural invalidation (rebuild).** Archetypes already hold their list of matching queries. Sorted views register in a *separate* list, `archetype.sortedViews`, which is empty for the overwhelming majority of archetypes. Any row insert, row removal, or archetype-list change flips `view.structuralDirty = true` on that short list. Normal queries pay nothing for this.
+**Structural invalidation (rebuild).** Archetypes already hold their list of matching queries. Sorted views register in a _separate_ list, `archetype.sortedViews`, which is empty for the overwhelming majority of archetypes. Any row insert, row removal, or archetype-list change flips `view.structuralDirty = true` on that short list. Normal queries pay nothing for this.
 
 **Value invalidation (resort).** Checked at access time against the column's scalar `lastWriteTick` (§8.3):
 
@@ -458,7 +465,7 @@ They cost different amounts, so they are tracked separately:
 dirty = any(matchingArchetypes, a => a.column(field).lastWriteTick > view.stamp.value)
 ```
 
-O(number of matching archetypes) — typically single digits — with no scan of the data. It is conservative at column granularity: a write to *any* row of the sort key invalidates the order, which is exactly the question being asked.
+O(number of matching archetypes) — typically single digits — with no scan of the data. It is conservative at column granularity: a write to _any_ row of the sort key invalidates the order, which is exactly the question being asked.
 
 Sorting by a field automatically marks its trait tracked, so the tick machinery is guaranteed to exist.
 
@@ -476,7 +483,7 @@ Sorting is **stable**: ties keep their previous relative order. This matters mor
 for (const chunk of world.query(Position, SortIndex).chunks()) {
   const s = chunk.get(SortIndex)
   for (let i = 0; i < chunk.length; i++) s.value[i] = layerOf(i)
-  chunk.markChanged(SortIndex)      // ← without this, the sorted view stays stale
+  chunk.markChanged(SortIndex) // ← without this, the sorted view stays stale
 }
 ```
 
@@ -485,9 +492,9 @@ Chunk writes go straight to the typed array, so nothing observes them. `chunk.ma
 #### Escape hatches
 
 ```ts
-sorted.invalidate()      // force a resort on next access
-sorted.rebuild()         // force a full rebuild
-sorted.isDirty           // 'clean' | 'resort' | 'rebuild'
+sorted.invalidate() // force a resort on next access
+sorted.rebuild() // force a full rebuild
+sorted.isDirty // 'clean' | 'resort' | 'rebuild'
 ```
 
 Needed when the sort key is derived from something apecs cannot see — an external clock, a camera position, a comparator closing over mutable state. The comparator overload of `sortBy` has no key column to watch, so it is **always treated as `resort`-dirty** unless you memoise it yourself with `invalidate()`.
@@ -501,12 +508,12 @@ A relation is a trait parameterised by a target entity.
 ### 7.1 Declaration
 
 ```ts
-const ChildOf = new Relation()                                    // tag relation
-const Likes   = new Relation({ amount: 0 })                       // relation with data
+const ChildOf = new Relation() // tag relation
+const Likes = new Relation({ amount: 0 }) // relation with data
 
 const ChildOf = new Relation(undefined, {
-  exclusive: true,              // an entity has at most one target
-  onTargetDespawn: 'despawn',   // 'remove' (default) | 'despawn' | 'orphan'
+  exclusive: true, // an entity has at most one target
+  onTargetDespawn: 'despawn', // 'remove' (default) | 'despawn' | 'orphan'
 })
 ```
 
@@ -514,25 +521,25 @@ const ChildOf = new Relation(undefined, {
 
 ```ts
 const parent = world.spawn()
-const child  = world.spawn(ChildOf(parent))
+const child = world.spawn(ChildOf(parent))
 
 world.add(child, Likes(other, { amount: 5 }))
 world.remove(child, ChildOf(parent))
 world.has(child, ChildOf(parent))
-world.has(child, ChildOf('*'))          // any target
+world.has(child, ChildOf('*')) // any target
 ```
 
 ### 7.3 Querying
 
 ```ts
-world.queryFirst(ChildOf(parent))       // the first child of `parent`
-world.query(ChildOf(parent))            // all children of `parent`
-world.query(ChildOf('*'))               // every entity that has a parent
+world.queryFirst(ChildOf(parent)) // the first child of `parent`
+world.query(ChildOf(parent)) // all children of `parent`
+world.query(ChildOf('*')) // every entity that has a parent
 world.query(Position, Not(ChildOf('*'))) // roots
 
-world.target(e, ChildOf)                // Entity | NULL_ENTITY  (exclusive)
-world.targets(e, Likes)                 // Iterable<Entity>      (non-exclusive)
-world.get(e, Likes(other))              // { amount } — relation data
+world.target(e, ChildOf) // Entity | NULL_ENTITY  (exclusive)
+world.targets(e, Likes) // Iterable<Entity>      (non-exclusive)
+world.get(e, Likes(other)) // { amount } — relation data
 ```
 
 ### 7.4 Storage — avoiding archetype explosion
@@ -548,7 +555,7 @@ apecs uses **two storage strategies, chosen by cardinality**:
 - `ChildOf(parent)` is served by a **target index** — a `Map<target, EntityList>` maintained incrementally on add/remove/despawn — making `queryFirst(ChildOf(parent))` O(1) and `query(ChildOf(parent))` O(matches).
 - Re-targeting (`add(child, ChildOf(newParent))`) is a column write plus two index edits. **No archetype transition at all.**
 
-**Non-exclusive relations use pair ids in the archetype mask.** Each distinct `(relation, target)` interns to a trait-like local id and participates in matching normally. This is correct when target cardinality is low (`Likes`, `Owes`, `TargetedBy`) and is the only way to express "matches entities related to *these two specific* targets" as a single archetype match.
+**Non-exclusive relations use pair ids in the archetype mask.** Each distinct `(relation, target)` interns to a trait-like local id and participates in matching normally. This is correct when target cardinality is low (`Likes`, `Owes`, `TargetedBy`) and is the only way to express "matches entities related to _these two specific_ targets" as a single archetype match.
 
 Dev builds warn when a non-exclusive relation exceeds a configurable distinct-pair threshold, suggesting `exclusive: true` or `storage: 'sparse'`.
 
@@ -556,11 +563,11 @@ Dev builds warn when a non-exclusive relation exceeds a configurable distinct-pa
 
 When a target entity is despawned, every entity holding a relation to it is resolved according to `onTargetDespawn`:
 
-| Policy | Effect |
-|---|---|
-| `'remove'` (default) | the relation is removed from the source entity |
-| `'despawn'` | the source entity is despawned too, recursively |
-| `'orphan'` | the relation is kept with a dead target; `world.target` returns it, `isAlive` is false |
+| Policy               | Effect                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `'remove'` (default) | the relation is removed from the source entity                                         |
+| `'despawn'`          | the source entity is despawned too, recursively                                        |
+| `'orphan'`           | the relation is kept with a dead target; `world.target` returns it, `isAlive` is false |
 
 Cascading despawn is **iterative, not recursive** — it uses an explicit work queue, so a 100 000-node hierarchy will not blow the JS stack. Cycles are detected via a visited set and terminate cleanly.
 
@@ -587,16 +594,18 @@ Two mechanisms, deliberately separate, because they answer different questions.
 ### 8.1 Observers — push
 
 ```ts
-const unsubAdd    = world.onAdd(Position, (entity) => {})
-const unsubRemove = world.onRemove(Mesh, (entity) => { world.get(entity, Mesh).dispose() })
+const unsubAdd = world.onAdd(Position, (entity) => {})
+const unsubRemove = world.onRemove(Mesh, (entity) => {
+  world.get(entity, Mesh).dispose()
+})
 const unsubChange = world.onChange(Position, (entity) => {})
 
-const unsub = world.onAdd(ChildOf, (entity, target) => {})   // relations pass the target
+const unsub = world.onAdd(ChildOf, (entity, target) => {}) // relations pass the target
 ```
 
 - `entity` is always defined. `target` is defined for relations and `undefined` otherwise.
 - Handlers are dispatched **immediately**, at the point of the operation, before it returns. No hidden latency, no frame boundary to reason about.
-- Handlers fire for observers registered on a *relation* regardless of target; register on `R(target)` to observe one pair.
+- Handlers fire for observers registered on a _relation_ regardless of target; register on `R(target)` to observe one pair.
 - `onRemove` fires **before** the data is destroyed, so the handler can still read it — this is what makes it usable for resource disposal.
 - Registration is free when nobody is listening: a trait with no observers has no dispatch site cost, and observation is what allocates the change-tick column.
 
@@ -621,16 +630,18 @@ The world holds a monotonic `world.tick`, incremented by `world.step()` (or manu
 The scalar is what makes sorted-query memoisation cheap (§6.7). Writing it is one extra monomorphic store next to the per-row store, on the same already-tracked path.
 
 ```ts
-world.step()                     // ++tick
+world.step() // ++tick
 
-world.query(Position, Changed(Position)).each((p) => { /* only entities written since last run */ })
+world.query(Position, Changed(Position)).each((p) => {
+  /* only entities written since last run */
+})
 world.query(Added(Velocity))
-world.query(Removed(Velocity))   // valid for one tick after removal
+world.query(Removed(Velocity)) // valid for one tick after removal
 ```
 
 Each `Changed`/`Added`/`Removed` query stores its own last-seen tick, so two systems observing the same trait do not steal each other's events.
 
-Ticks are written by `world.set` and by cursor setters. **Direct chunk writes bypass them** — call `chunk.markChanged(trait)` or `world.changed(e, trait)`. Both forms update the per-row ticks *and* the column's `lastWriteTick`.
+Ticks are written by `world.set` and by cursor setters. **Direct chunk writes bypass them** — call `chunk.markChanged(trait)` or `world.changed(e, trait)`. Both forms update the per-row ticks _and_ the column's `lastWriteTick`.
 
 Tick columns are allocated only for **tracked** traits: a trait becomes tracked on the first `onChange` subscription, the first `Changed()`/`sortBy` usage, or `{ track: true }`. Untracked traits pay nothing per write.
 
@@ -639,7 +650,7 @@ At scale, prefer pull over push: `Changed()` is a linear scan of a `Uint32Array`
 ### 8.4 Ordering and reentrancy
 
 - Observers for one trait fire in registration order.
-- For a batch operation, all `onAdd` handlers for entity *n* fire before those for entity *n+1*.
+- For a batch operation, all `onAdd` handlers for entity _n_ fire before those for entity _n+1_.
 - Structural changes performed **inside** an observer are applied immediately, but the currently-iterating query is protected by the rules in §9.
 - Reentrancy is bounded: dev builds throw on an observer cascade deeper than 32 levels, which is otherwise an infinite-loop-shaped bug.
 
@@ -661,13 +672,13 @@ The classic ECS footgun, specified explicitly.
 
 **Archetypes iterate back-to-front with swap-remove semantics.** The consequence:
 
-| Operation during iteration | Safe? |
-|---|---|
-| Reading/writing trait values on any entity | ✅ |
-| Adding/removing traits on **the current entity** | ✅ |
-| Despawning **the current entity** | ✅ |
-| Adding/removing/despawning **any other** entity | ⚠️ requires deferral |
-| Spawning entities | ⚠️ requires deferral |
+| Operation during iteration                       | Safe?                |
+| ------------------------------------------------ | -------------------- |
+| Reading/writing trait values on any entity       | ✅                   |
+| Adding/removing traits on **the current entity** | ✅                   |
+| Despawning **the current entity**                | ✅                   |
+| Adding/removing/despawning **any other** entity  | ⚠️ requires deferral |
+| Spawning entities                                | ⚠️ requires deferral |
 
 For the unsafe cases:
 
@@ -751,12 +762,15 @@ type Store<S>  = { readonly [K in keyof S]: TypedArrayFor<S[K]> }
 Query argument extraction filters non-data terms and maps the rest:
 
 ```ts
-type Values<T extends Term[]> =
-  T extends [infer H, ...infer R extends Term[]]
-    ? H extends Trait<infer S> ? (IsTag<S> extends true ? Values<R> : [Cursor<S>, ...Values<R>])
-    : H extends Optional<Trait<infer S>> ? [Cursor<S> | null, ...Values<R>]
-    : Values<R>                                  // Not / With / Changed / Added / Removed
-    : []
+type Values<T extends Term[]> = T extends [infer H, ...infer R extends Term[]]
+  ? H extends Trait<infer S>
+    ? IsTag<S> extends true
+      ? Values<R>
+      : [Cursor<S>, ...Values<R>]
+    : H extends Optional<Trait<infer S>>
+      ? [Cursor<S> | null, ...Values<R>]
+      : Values<R> // Not / With / Changed / Added / Removed
+  : []
 ```
 
 Requirements the implementation must satisfy:
@@ -776,15 +790,15 @@ Requirements the implementation must satisfy:
 
 Targets, not measurements — the spec commits to publishing the numbers, and to failing CI on regression beyond a threshold.
 
-| Benchmark | Target |
-|---|---|
-| `packed-5` (5 traits, 1 000 entities, iterate all) | ≥ parity with the fastest JS ECS measured |
+| Benchmark                                              | Target                                                                              |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `packed-5` (5 traits, 1 000 entities, iterate all)     | ≥ parity with the fastest JS ECS measured                                           |
 | `simple-iter` (100 000 entities, 2 traits, arithmetic) | within 1.5× of a hand-written typed-array loop via `each`; within 1.1× via `chunks` |
-| `frag-iter` (26 archetypes, 100 000 entities) | linear in matching archetypes, no per-archetype fixed cost above ~200ns |
-| `entity-cycle` (spawn/despawn 100 000) | no allocation after warmup; steady-state GC pressure ≈ 0 |
-| `add-remove` (100 000 trait add + remove) | two `Map` lookups plus one row move per operation |
-| `sorted-static` (100 000 entities, sort key untouched) | **zero work** — one `lastWriteTick` compare per matching archetype |
-| `sorted-drift` (100 000 entities, 1% of keys changed) | one O(n) key pass + adaptive re-sort; no full `n log n` |
+| `frag-iter` (26 archetypes, 100 000 entities)          | linear in matching archetypes, no per-archetype fixed cost above ~200ns             |
+| `entity-cycle` (spawn/despawn 100 000)                 | no allocation after warmup; steady-state GC pressure ≈ 0                            |
+| `add-remove` (100 000 trait add + remove)              | two `Map` lookups plus one row move per operation                                   |
+| `sorted-static` (100 000 entities, sort key untouched) | **zero work** — one `lastWriteTick` compare per matching archetype                  |
+| `sorted-drift` (100 000 entities, 1% of keys changed)  | one O(n) key pass + adaptive re-sort; no full `n log n`                             |
 
 Comparison set: bitECS, koota, becsy, and a hand-written baseline. The hand-written baseline is the one that matters.
 
@@ -798,14 +812,14 @@ Comparison set: bitECS, koota, becsy, and a hand-written baseline. The hand-writ
 
 ### 12.3 Limits
 
-| Limit | Value | Reason |
-|---|---|---|
-| Entities per world | 2³² − 2 | 32-bit id field |
-| Generations before id retirement | 4096 | 12-bit generation field |
-| Worlds alive simultaneously | 256 | 8-bit world field |
-| Traits per world | unbounded | masks grow a 32-bit block at a time |
-| Fields per trait | unbounded | one column each |
-| Page size | power of two, default 4096 | |
+| Limit                            | Value                      | Reason                              |
+| -------------------------------- | -------------------------- | ----------------------------------- |
+| Entities per world               | 2³² − 2                    | 32-bit id field                     |
+| Generations before id retirement | 4096                       | 12-bit generation field             |
+| Worlds alive simultaneously      | 256                        | 8-bit world field                   |
+| Traits per world                 | unbounded                  | masks grow a 32-bit block at a time |
+| Fields per trait                 | unbounded                  | one column each                     |
+| Page size                        | power of two, default 4096 |                                     |
 
 ---
 
@@ -814,13 +828,13 @@ Comparison set: bitECS, koota, becsy, and a hand-written baseline. The hand-writ
 ```ts
 import { World, Trait, Relation, Changed, f32 } from 'apecs'
 
-const Position  = new Trait({ x: f32(0), y: f32(0) })
-const Velocity  = new Trait({ x: f32(0), y: f32(0) })
-const Health    = new Trait({ current: 100, max: 100 })
-const Mesh      = new Trait(() => new THREE.Mesh())
-const IsEnemy   = new Trait()
-const Time      = new Trait({ delta: 0, current: 0 })
-const ChildOf   = new Relation(undefined, { exclusive: true, onTargetDespawn: 'despawn' })
+const Position = new Trait({ x: f32(0), y: f32(0) })
+const Velocity = new Trait({ x: f32(0), y: f32(0) })
+const Health = new Trait({ current: 100, max: 100 })
+const Mesh = new Trait(() => new THREE.Mesh())
+const IsEnemy = new Trait()
+const Time = new Trait({ delta: 0, current: 0 })
+const ChildOf = new Relation(undefined, { exclusive: true, onTargetDespawn: 'despawn' })
 
 class Game extends World {
   constructor() {
@@ -850,7 +864,8 @@ function movement(world: Game) {
 }
 
 function reap(world: Game) {
-  world.query(Health, IsEnemy).each((hp, e) => {   // IsEnemy is a tag — no argument
+  world.query(Health, IsEnemy).each((hp, e) => {
+    // IsEnemy is a tag — no argument
     if (hp.current <= 0) world.defer(() => world.despawn(e))
   })
 }

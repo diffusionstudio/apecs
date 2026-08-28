@@ -1,0 +1,45 @@
+{
+  "name": "apecs",
+  "version": "0.1.0",
+  "description": "A high-performance archetype ECS for TypeScript.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:dev": "vitest run --project dev",
+    "test:prod": "vitest run --project prod",
+    "test:types": "vitest run --project types",
+    "test:alloc": "node --expose-gc ./node_modules/vitest/vitest.mjs run --project dev",
+    "bench": "vitest bench --run",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "prettier": "^3.9.6",
+    "tsdown": "^0.21.10",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
