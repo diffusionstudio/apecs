@@ -46,9 +46,6 @@ import { Trait, f32, u16 } from 'apecs'
 // SoA struct trait — one column per field
 const Position = new Trait({ x: f32(0), y: f32(0) })
 
-// SoA scalar trait — one column
-const Rotation = new Trait(0)
-
 // Tag — no data, no column
 const IsActive = new Trait()
 
@@ -82,8 +79,7 @@ A `Trait` instance exposes **its fields and nothing else** as string-keyed prope
 
 ```ts
 Position.x            // Field<number>
-Rotation              // scalar traits are their own Field
-Mesh                  // AoS traits are their own Field
+Mesh                  // an AoS trait is its own Field — it has exactly one column
 ```
 
 Fields address a single column and are accepted everywhere a trait is, when a single value is wanted:
@@ -100,7 +96,6 @@ A trait is **callable**. Calling it produces a *trait instance* — a trait pair
 
 ```ts
 Position({ x: 20, y: 10 })    // partial; unspecified fields take the default
-Rotation(Math.PI)             // scalar
 Mesh(existingMesh)            // AoS: adopt an existing reference instead of calling the factory
 IsActive                      // tags are passed bare
 ```
@@ -150,7 +145,7 @@ Generation wraps at 4096 recycles; on wrap the id is **retired** rather than reu
 ### 4.2 Lifecycle
 
 ```ts
-const e = world.spawn(Position({ x: 20 }), Rotation, IsActive)
+const e = world.spawn(Position({ x: 20 }), Velocity, IsActive)
 world.isAlive(e)          // boolean — generation-checked
 world.despawn(e)          // immediate; generation bumped, id queued for recycling
 ```
@@ -316,8 +311,14 @@ interface QueryResult<T extends Term[]> {
   each(fn: (...args: [...Values<T>, Entity]) => void): void
   chunks(): Iterable<Chunk<T>>
   entities(): Float64Array         // snapshot copy — safe under mutation
-  sortBy(field: Field, dir?: 'asc' | 'desc'): QueryResult<T>
-  sortBy(cmp: (a: Entity, b: Entity) => number): QueryResult<T>
+  sortBy(field: Field, dir?: 'asc' | 'desc'): SortedQueryResult<T>
+  sortBy(cmp: (a: Entity, b: Entity) => number): SortedQueryResult<T>
+}
+
+interface SortedQueryResult<T> extends Omit<QueryResult<T>, 'chunks' | 'sortBy'> {
+  readonly isDirty: 'clean' | 'resort' | 'rebuild'
+  invalidate(): void
+  rebuild(): void
 }
 ```
 
@@ -358,12 +359,11 @@ world.query(Position, Velocity).each((p, v) => {
 world.query(Position, Velocity).each((p, v, entity) => { /* handle last */ })
 ```
 
-**What arrives depends on the trait kind** — the rule is *you always receive something you can write through*:
+**What arrives depends on the trait kind.**:
 
 | Trait kind | `each` yields | Write |
 |---|---|---|
 | struct (`{ x, y }`) | reusable cursor | `p.x = 1` |
-| scalar primitive (`0`) | reusable `Ref` | `r.value += dt` (`r.$` is an alias) |
 | AoS (factory) | the reference itself | `mesh.position.set(...)`; replace via `world.set` |
 | tag / `Not` / `With` | *nothing* | — |
 | `Optional(T)` | cursor or `null` | — |
@@ -414,18 +414,83 @@ Guarantees the chunk API relies on:
 
 This tier does no change tracking and performs no liveness checks. That is the trade.
 
+`markChanged` is not optional bookkeeping — it is the only signal that a chunk write happened. Skipping it means `Changed()` filters miss the write **and sorted queries do not resort** (§6.7). Dev builds detect the omission: if a chunk hands out a `Store` for a tracked trait and the iteration ends without a matching `markChanged`, apecs warns once per call site.
+
 ### 6.7 Sorted queries
 
 ```ts
-const SortIndex = new Trait(0)
-for (const e of world.query(Position).sortBy(SortIndex, 'asc')) { }
+const SortIndex = new Trait({ value: 0 })
+for (const e of world.query(Position).sortBy(SortIndex.value, 'asc')) { }
 ```
 
-Sorting necessarily materialises the result into a flat array, which breaks chunk iteration — a sorted query supports Tier 1 and `each`, not `chunks`.
+Sorting materialises the result into a flat array, which breaks chunk iteration — a sorted query supports Tier 1 and `each`, not `chunks`. `sortBy` returns a distinct cached `QueryResult`, so the unsorted query is unaffected.
 
-The sorted array is **cached and invalidated** on (a) any structural change to a matching archetype, or (b) a change tick bump on the sort key's column. A static sort therefore costs nothing on frames where nothing moved; sorting the key trait automatically marks it tracked.
+Sorting is the one operation in apecs that is super-linear, so **the sorted view is memoised, and the invalidation rules are part of the contract** — not an optimisation the implementation may skip.
 
-`sortBy` returns a distinct cached `QueryResult`, so the unsorted query is unaffected.
+#### Memoisation
+
+`sortBy` is itself a cache lookup: the sorted view is keyed on `(query signature, field, direction)`, so calling it every frame inside a system is O(1) and returns the same object.
+
+The view holds:
+
+```
+entities   Float64Array   // the materialised, ordered result
+order      Uint32Array    // permutation being sorted — reused across frames
+keys       Float64Array   // extracted sort keys, parallel to the pre-sort entity list
+stamp      { structural: number, value: number }
+```
+
+#### Two dirty levels
+
+They cost different amounts, so they are tracked separately:
+
+| Level | Trigger | Work on next access |
+|---|---|---|
+| **clean** | nothing changed | none — return the cached `entities` |
+| **resort** | a sort-key value changed | refresh `keys`, re-sort `order` in place — O(n), see below |
+| **rebuild** | the matching entity set changed | rebuild the entity list, refresh `keys`, sort — O(n log n) |
+
+**Structural invalidation (rebuild).** Archetypes already hold their list of matching queries. Sorted views register in a *separate* list, `archetype.sortedViews`, which is empty for the overwhelming majority of archetypes. Any row insert, row removal, or archetype-list change flips `view.structuralDirty = true` on that short list. Normal queries pay nothing for this.
+
+**Value invalidation (resort).** Checked at access time against the column's scalar `lastWriteTick` (§8.3):
+
+```
+dirty = any(matchingArchetypes, a => a.column(field).lastWriteTick > view.stamp.value)
+```
+
+O(number of matching archetypes) — typically single digits — with no scan of the data. It is conservative at column granularity: a write to *any* row of the sort key invalidates the order, which is exactly the question being asked.
+
+Sorting by a field automatically marks its trait tracked, so the tick machinery is guaranteed to exist.
+
+#### Why resort is O(n), not O(n log n)
+
+The view **keeps the previous permutation and re-sorts it in place**. V8's sort is TimSort, which is adaptive: a nearly-sorted array costs O(n) comparisons with one detected run. A frame in which one entity's sort key moved by a few positions therefore costs a linear pass, not a full sort.
+
+Sorting also never compares through `world.get`. Keys are extracted once into a `Float64Array` in an O(n) pass, and the comparator reads `keys[a] - keys[b]` — two typed-array loads, no entity-index lookups, no boxing. A full sort of 100 000 entities is one key-extraction pass plus a comparator that touches nothing but one typed array.
+
+Sorting is **stable**: ties keep their previous relative order. This matters more than it sounds — an unstable sort makes equal-`SortIndex` sprites swap draw order between frames and flicker.
+
+#### The chunk hazard
+
+```ts
+for (const chunk of world.query(Position, SortIndex).chunks()) {
+  const s = chunk.get(SortIndex)
+  for (let i = 0; i < chunk.length; i++) s.value[i] = layerOf(i)
+  chunk.markChanged(SortIndex)      // ← without this, the sorted view stays stale
+}
+```
+
+Chunk writes go straight to the typed array, so nothing observes them. `chunk.markChanged(SortIndex)` bumps the column's `lastWriteTick` and is what schedules the resort. Omitting it is silent in production and warned about in dev (§6.6).
+
+#### Escape hatches
+
+```ts
+sorted.invalidate()      // force a resort on next access
+sorted.rebuild()         // force a full rebuild
+sorted.isDirty           // 'clean' | 'resort' | 'rebuild'
+```
+
+Needed when the sort key is derived from something apecs cannot see — an external clock, a camera position, a comparator closing over mutable state. The comparator overload of `sortBy` has no key column to watch, so it is **always treated as `resort`-dirty** unless you memoise it yourself with `invalidate()`.
 
 ---
 
@@ -548,7 +613,12 @@ Cheap, because archetype transitions already compute exactly this.
 
 ### 8.3 Change ticks — pull
 
-The world holds a monotonic `world.tick`, incremented by `world.step()` (or manually). Every tracked column carries a parallel `Uint32Array` of last-written ticks.
+The world holds a monotonic `world.tick`, incremented by `world.step()` (or manually). Every tracked column carries two things:
+
+- a parallel `Uint32Array` of **per-row** last-written ticks, for `Changed()` filtering;
+- a single scalar **`lastWriteTick`** on the column itself, for O(1) "did anything in this column change?" questions.
+
+The scalar is what makes sorted-query memoisation cheap (§6.7). Writing it is one extra monomorphic store next to the per-row store, on the same already-tracked path.
 
 ```ts
 world.step()                     // ++tick
@@ -560,7 +630,7 @@ world.query(Removed(Velocity))   // valid for one tick after removal
 
 Each `Changed`/`Added`/`Removed` query stores its own last-seen tick, so two systems observing the same trait do not steal each other's events.
 
-Ticks are written by `world.set` and by cursor setters. **Direct chunk writes bypass them** — call `chunk.markChanged(trait)` or `world.changed(e, trait)`.
+Ticks are written by `world.set` and by cursor setters. **Direct chunk writes bypass them** — call `chunk.markChanged(trait)` or `world.changed(e, trait)`. Both forms update the per-row ticks *and* the column's `lastWriteTick`.
 
 Tick columns are allocated only for **tracked** traits: a trait becomes tracked on the first `onChange` subscription, the first `Changed()`/`sortBy` usage, or `{ track: true }`. Untracked traits pay nothing per write.
 
@@ -663,19 +733,17 @@ Boxed columns (`string`, `Array<T>`, AoS traits) are inherently non-shareable an
 The typing is load-bearing — it is what makes three access tiers usable rather than error-prone.
 
 ```ts
-type Schema = Record<string, unknown> | number | boolean | string | (() => unknown)
+type Schema = Record<string, unknown> | (() => unknown) | void
 
 class Trait<S extends Schema> {
   (value?: Init<S>): TraitInstance<S>
 }
 
 type Value<S>  = S extends () => infer R ? R
-               : S extends object ? { [K in keyof S]: Unmark<S[K]> }
-               : Unmark<S>
+               : { [K in keyof S]: Unmark<S[K]> }
 
-type Cursor<S> = S extends () => infer R ? R
-               : S extends object ? { -readonly [K in keyof S]: Unmark<S[K]> }
-               : Ref<Unmark<S>>
+type Cursor<S> = S extends () => infer R ? R                        // AoS: the reference itself
+               : { -readonly [K in keyof S]: Unmark<S[K]> }         // SoA: a cursor
 
 type Store<S>  = { readonly [K in keyof S]: TypedArrayFor<S[K]> }
 ```
@@ -715,6 +783,8 @@ Targets, not measurements — the spec commits to publishing the numbers, and to
 | `frag-iter` (26 archetypes, 100 000 entities) | linear in matching archetypes, no per-archetype fixed cost above ~200ns |
 | `entity-cycle` (spawn/despawn 100 000) | no allocation after warmup; steady-state GC pressure ≈ 0 |
 | `add-remove` (100 000 trait add + remove) | two `Map` lookups plus one row move per operation |
+| `sorted-static` (100 000 entities, sort key untouched) | **zero work** — one `lastWriteTick` compare per matching archetype |
+| `sorted-drift` (100 000 entities, 1% of keys changed) | one O(n) key pass + adaptive re-sort; no full `n log n` |
 
 Comparison set: bitECS, koota, becsy, and a hand-written baseline. The hand-written baseline is the one that matters.
 
@@ -746,7 +816,7 @@ import { World, Trait, Relation, Changed, f32 } from 'apecs'
 
 const Position  = new Trait({ x: f32(0), y: f32(0) })
 const Velocity  = new Trait({ x: f32(0), y: f32(0) })
-const Health    = new Trait(100)
+const Health    = new Trait({ current: 100, max: 100 })
 const Mesh      = new Trait(() => new THREE.Mesh())
 const IsEnemy   = new Trait()
 const Time      = new Trait({ delta: 0, current: 0 })
@@ -781,7 +851,7 @@ function movement(world: Game) {
 
 function reap(world: Game) {
   world.query(Health, IsEnemy).each((hp, e) => {   // IsEnemy is a tag — no argument
-    if (hp.value <= 0) world.defer(() => world.despawn(e))
+    if (hp.current <= 0) world.defer(() => world.despawn(e))
   })
 }
 
@@ -839,6 +909,9 @@ world.query(...terms): QueryResult
 world.createQuery(...terms): QueryResult
 world.queryFirst(...terms): Entity | undefined
 
+query.sortBy(field, dir?) | query.sortBy(cmp): SortedQueryResult
+sorted.isDirty  sorted.invalidate()  sorted.rebuild()
+
 // events
 world.onAdd(trait, fn): () => void
 world.onRemove(trait, fn): () => void
@@ -866,7 +939,6 @@ Listed here because the v1 design must not foreclose them.
 
 ## 16. Open questions
 
-1. **Scalar cursor ergonomics.** `r.value += dt` for primitive scalar traits is the one place where the API grates. `r.$` is offered as an alias. The alternative — making scalar traits read-only in `each` — is more consistent but more limiting.
-2. **`world.get` copy semantics.** Returning a copy is safe and predictable but allocates. The `out` parameter covers the hot case; whether a pooled default `out` is worth the aliasing hazard is unresolved.
-3. **World-id exhaustion.** 8 bits gives 256 concurrently-alive worlds and, after id reuse, a stale-handle guarantee that degrades. If short-lived worlds are a real usage pattern (tests, level loading), the field may need widening at the cost of the id or generation field.
-4. **Non-exclusive relation cardinality.** The pair-id strategy is correct at low fan-out and pathological at high fan-out. The dev-mode warning is a stopgap; an automatic promotion to indexed storage may be warranted.
+1. **`world.get` copy semantics.** Returning a copy is safe and predictable but allocates. The `out` parameter covers the hot case; whether a pooled default `out` is worth the aliasing hazard is unresolved.
+2. **World-id exhaustion.** 8 bits gives 256 concurrently-alive worlds and, after id reuse, a stale-handle guarantee that degrades. If short-lived worlds are a real usage pattern (tests, level loading), the field may need widening at the cost of the id or generation field.
+3. **Non-exclusive relation cardinality.** The pair-id strategy is correct at low fan-out and pathological at high fan-out. The dev-mode warning is a stopgap; an automatic promotion to indexed storage may be warranted.
