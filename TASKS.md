@@ -18,7 +18,7 @@ vitest projects unless noted.
 
 Stage gate: none. Everything here can start immediately.
 
-### 0-A — Tests (all with no dependencies; write in parallel)
+### 0-A [COMPLETED]— Tests (all with no dependencies; write in parallel)
 
 | ID | Test task |
 | --- | --- |
@@ -33,7 +33,7 @@ Stage gate: none. Everything here can start immediately.
 | **T0.9** | `new Function` capability probe, single detection at module load (§6.5) |
 | **T0.10** | Dev-assertion helper — throws in `dev`, compiled out in `prod` (§12.2) |
 
-### 0-B — Implementation
+### 0-B [COMPLETED] — Implementation
 
 | ID | Impl task | → |
 | --- | --- | --- |
