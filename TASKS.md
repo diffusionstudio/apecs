@@ -54,7 +54,7 @@ Stage gate: none. Everything here can start immediately.
 
 Stage gate: **0-B complete.**
 
-### 1-A — Tests
+### 1-A [COMPLETED] — Tests
 
 | ID | Test task |
 | --- | --- |
