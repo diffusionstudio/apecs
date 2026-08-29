@@ -37,6 +37,6 @@ export class EntityIndex {
   }
 }
 
-function nextPowerOfTwo(n: number): number {
+export function nextPowerOfTwo(n: number): number {
   return n <= 1 ? 1 : 2 ** (32 - Math.clz32(n - 1))
 }

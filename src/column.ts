@@ -1,6 +1,9 @@
 import { assert } from './debug'
 import type { Field } from './schema'
 
+/** Default column page size — a power of two (SPEC §12.3). */
+export const PAGE_SIZE = 4096
+
 export type ColumnPage =
   | Int8Array
   | Int16Array

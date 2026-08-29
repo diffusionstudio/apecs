@@ -19,3 +19,8 @@ export const $term = Symbol('apecs.term')
 export const $terms = Symbol('apecs.terms')
 
 export const $mark = Symbol('apecs.mark')
+export const $plan = Symbol('apecs.plan')
+
+export const $entities = Symbol('apecs.entities')
+export const $archetypes = Symbol('apecs.archetypes')
+export const $traits = Symbol('apecs.traits')

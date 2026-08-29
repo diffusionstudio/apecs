@@ -163,3 +163,27 @@ export function normalizeSchema(schema: Schema): NormalizedSchema {
   flatten(schema, [], fields)
   return { kind: 'struct', fields }
 }
+
+/** A nested key tree over the flattened fields; leaves are `Field`s (SPEC §4.4). */
+export interface Plan {
+  [key: string]: Field | Plan
+}
+
+/**
+ * Mirrors the declared shape so `get` and `set` walk plain objects instead of
+ * joining strings. Null-prototype nodes keep `__proto__` and friends inert.
+ */
+export function buildPlan(fields: readonly Field[]): Plan {
+  const root: Plan = Object.create(null)
+  for (const field of fields) {
+    const { path } = field
+    if (path.length === 0) continue
+    let node = root
+    for (let i = 0; i < path.length - 1; i++) {
+      const next = node[path[i]]
+      node = next === undefined ? ((node[path[i]] = Object.create(null)) as Plan) : (next as Plan)
+    }
+    node[path[path.length - 1]] = field
+  }
+  return root
+}

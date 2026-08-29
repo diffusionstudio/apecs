@@ -1,8 +1,19 @@
 import { assert } from './debug'
 import { NULL_ENTITY, type Entity } from './entity'
-import { isMarker, isPlainObject, normalizeSchema } from './schema'
-import type { Field, Schema, SchemaKind } from './schema'
-import { $fields, $id, $kind, $make, $options, $schema, $target, $trait, $value } from './symbols'
+import { buildPlan, isMarker, isPlainObject, normalizeSchema } from './schema'
+import type { Field, Plan, Schema, SchemaKind } from './schema'
+import {
+  $fields,
+  $id,
+  $kind,
+  $make,
+  $options,
+  $plan,
+  $schema,
+  $target,
+  $trait,
+  $value,
+} from './symbols'
 
 export interface TraitOptions {
   /** `'table'` keeps columns inside the archetype; `'sparse'` keeps them outside it (SPEC §3.5). */
@@ -26,6 +37,8 @@ export interface Trait {
   readonly [$fields]: readonly Field[]
   readonly [$schema]: Schema
   readonly [$options]: Readonly<Required<TraitOptions>>
+  /** Nested key tree over the flattened fields, for `get` / `set` (SPEC §4.4). */
+  readonly [$plan]: Plan
   /**
    * Fields, and nothing else, are the string-keyed properties (SPEC §3.3). The
    * `Function` members are redeclared because a trait's prototype is swapped away
@@ -56,12 +69,14 @@ interface TraitState {
   [$fields]: readonly Field[]
   [$schema]: Schema
   [$options]: Required<TraitOptions> & Record<string, unknown>
+  [$plan]: Plan
   [$make](a: unknown, b: unknown): TraitInstance
 }
 
 const DEFAULT_OPTIONS = { storage: 'table', track: false } as const
 
-let nextTraitId = 0
+/** Ids start at 1 so a zeroed slot never names a trait. */
+let nextTraitId = 1
 
 export function makeInstance(trait: Trait, target: Entity | '*', value: unknown): TraitInstance {
   return { [$trait]: trait, [$target]: target, [$value]: value }
@@ -86,6 +101,7 @@ export class TraitImpl {
   declare readonly [$fields]: readonly Field[]
   declare readonly [$schema]: Schema
   declare readonly [$options]: Required<TraitOptions> & Record<string, unknown>
+  declare readonly [$plan]: Plan
 
   public constructor(schema?: Schema, options?: TraitOptions, defaults?: object) {
     const { kind, fields } = normalizeSchema(schema)
@@ -99,6 +115,7 @@ export class TraitImpl {
     self[$kind] = kind
     self[$fields] = fields
     self[$schema] = schema
+    self[$plan] = buildPlan(fields)
     self[$options] = { ...DEFAULT_OPTIONS, ...defaults, ...options }
 
     if (__DEV__) {

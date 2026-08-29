@@ -19,3 +19,6 @@ export { Added, Cascade, Changed, Not, Optional, Or, Removed, With } from './ter
 export type { Modifier, Term, TermKind } from './terms'
 
 export type { Entity } from './entity'
+
+export { World } from './world'
+export type { EntityBatch, WorldOptions } from './world'

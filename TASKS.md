@@ -68,7 +68,7 @@ Stage gate: **0-B complete.**
 | **T1.8** | `spawnMany` / `addMany` / `removeMany` / `despawnMany`, single transition per batch, query as batch input (§4.3) |
 | **T1.9** | `storage: 'sparse'` traits — no archetype created, no row move on add/remove, values readable through the same API (§3.5) |
 
-### 1-B — Implementation
+### 1-B [COMPLETED] — Implementation
 
 | ID | Impl task | → |
 | --- | --- | --- |
