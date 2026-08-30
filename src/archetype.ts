@@ -29,10 +29,11 @@ export class Archetype {
   readonly entities: Float64Array[] = []
   public rows = 0
 
+  readonly pageSize: number
+  readonly pageShift: number
+  readonly pageMask: number
+
   private capacity = 0
-  private readonly pageSize: number
-  private readonly pageShift: number
-  private readonly pageMask: number
 
   public constructor(id: number, mask: Mask, pageSize: number) {
     this.id = id
@@ -114,6 +115,9 @@ export class ArchetypeGraph {
   readonly list: Archetype[] = []
   readonly root: Archetype
 
+  /** Set by the query cache; every new archetype is offered to the live queries once. */
+  public onCreate: ((archetype: Archetype) => void) | null = null
+
   private readonly byKey = new Map<string, Archetype>()
 
   public constructor(
@@ -159,6 +163,7 @@ export class ArchetypeGraph {
     }
     this.list.push(archetype)
     this.byKey.set(maskKey(mask), archetype)
+    this.onCreate?.(archetype)
     return archetype
   }
 }

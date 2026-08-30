@@ -88,7 +88,7 @@ Stage gate: **0-B complete.**
 
 Stage gate: **1-B complete.**
 
-### 2-A — Tests
+### 2-A [COMPLETED] — Tests
 
 | ID | Test task |
 | --- | --- |
@@ -100,7 +100,7 @@ Stage gate: **1-B complete.**
 | **T2.6** | `chunks` — index alignment across columns and `entities`, never spans a page, short tail page, `get`/`column`/`entity`, reusable non-generator iterator (§6.6, §12.2) |
 | **T2.7** | Fallback cursor parity with the codegen cursor across the `each` suite (§6.5) |
 
-### 2-B — Implementation
+### 2-B [COMPLETED] — Implementation
 
 | ID | Impl task | → |
 | --- | --- | --- |

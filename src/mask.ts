@@ -61,6 +61,13 @@ export function maskSuperset(mask: Mask, subset: Mask): boolean {
   return true
 }
 
+/** Any bit set in both. Blocks past either end read as zero. */
+export function maskIntersects(a: Mask, b: Mask): boolean {
+  const shared = a.length < b.length ? a.length : b.length
+  for (let i = 0; i < shared; i++) if ((a[i] & b[i]) !== 0) return true
+  return false
+}
+
 export function maskEquals(a: Mask, b: Mask): boolean {
   const shared = a.length < b.length ? a.length : b.length
   for (let i = 0; i < shared; i++) if (a[i] !== b[i]) return false

@@ -24,3 +24,8 @@ export const $plan = Symbol('apecs.plan')
 export const $entities = Symbol('apecs.entities')
 export const $archetypes = Symbol('apecs.archetypes')
 export const $traits = Symbol('apecs.traits')
+
+export const $bind = Symbol('apecs.bind')
+export const $row = Symbol('apecs.row')
+export const $poison = Symbol('apecs.poison')
+export const $queries = Symbol('apecs.queries')

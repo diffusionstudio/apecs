@@ -16,6 +16,7 @@ import {
   type Entity,
 } from './entity'
 import { maskHas } from './mask'
+import { QueryCache, type QueryResult } from './query'
 import { TraitRegistry } from './registry'
 import type { Field } from './schema'
 import { SparseStore } from './sparse'
@@ -27,9 +28,11 @@ import {
   $kind,
   $options,
   $plan,
+  $queries,
   $traits,
   $trait,
 } from './symbols'
+import type { Term } from './terms'
 import type { Trait } from './trait'
 import { initTrait, readStruct, traitOf, valueOf, writeStruct, type TraitLike } from './value'
 
@@ -75,6 +78,7 @@ export class World {
   declare readonly [$entities]: EntityIndex
   declare readonly [$traits]: TraitRegistry
   declare readonly [$archetypes]: ArchetypeGraph
+  declare readonly [$queries]: QueryCache
 
   /** Id 1 in every world; world traits are ordinary traits on it (SPEC §5.4). */
   declare readonly entity: Entity
@@ -110,6 +114,7 @@ export class World {
     this[$entities] = new EntityIndex(maxEntities)
     this[$traits] = new TraitRegistry()
     this[$archetypes] = new ArchetypeGraph(this[$traits], pageSize)
+    this[$queries] = new QueryCache(this[$traits], this[$archetypes])
 
     const entities = this[$entities]
     const root = this[$archetypes].root
@@ -302,11 +307,28 @@ export class World {
     else writeStruct(trait[$plan], columns!, row, written as Record<string, unknown>)
   }
 
+  // ------------------------------------------------------------------ queries
+
+  /** O(1) after the first call: the term list is hashed to a cached result (SPEC §6.2). */
+  public query(...terms: Term[]): QueryResult {
+    return this[$queries].get(terms)
+  }
+
+  /** The explicit hoist. Identical to what `query` hands out (SPEC §6.2). */
+  public createQuery(...terms: Term[]): QueryResult {
+    return this[$queries].get(terms)
+  }
+
+  public queryFirst(...terms: Term[]): Entity | undefined {
+    return this[$queries].get(terms).first
+  }
+
   // -------------------------------------------------------------------- world
 
   public destroy(): void {
     if (this.#destroyed) return
     this.#destroyed = true
+    this[$queries].clear()
     this.#stores.clear()
     this.#storeList.length = 0
     freeWorldIds.push(this[$id])
