@@ -118,7 +118,7 @@ Stage gate: **1-B complete.**
 
 Stage gate: **2-B complete.**
 
-### 3-A — Tests
+### 3-A [COMPLETED] — Tests
 
 | ID | Test task |
 | --- | --- |
