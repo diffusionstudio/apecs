@@ -21,7 +21,7 @@ export type { Modifier, Term, TermKind } from './terms'
 export type { Entity } from './entity'
 
 export { World } from './world'
-export type { EntityBatch, WorldOptions } from './world'
+export type { EntityBatch, ObserverFn, WorldOptions } from './world'
 
 export type { QueryResult } from './query'
 export type { Chunk } from './chunk'

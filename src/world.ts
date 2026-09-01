@@ -33,6 +33,7 @@ import {
   $trait,
 } from './symbols'
 import type { Term } from './terms'
+import { Ticks } from './ticks'
 import type { Trait } from './trait'
 import { initTrait, readStruct, traitOf, valueOf, writeStruct, type TraitLike } from './value'
 
@@ -67,6 +68,32 @@ function indexed(batch: EntityBatch): ArrayLike<number> {
   return typeof candidate.length === 'number' ? candidate : Array.from(batch)
 }
 
+/** `target` is defined for relations, `undefined` otherwise (SPEC §8.1). */
+export type ObserverFn = (entity: Entity, target?: Entity) => void
+
+interface Boundary {
+  readonly query: QueryResult
+  readonly enter: ObserverFn[]
+  readonly exit: ObserverFn[]
+}
+
+/** Dev builds treat a deeper observer cascade as an infinite loop (SPEC §8.4). */
+const MAX_OBSERVER_DEPTH = 32
+
+function append(list: ObserverFn[], fn: ObserverFn): () => void {
+  list.push(fn)
+  return () => {
+    const at = list.indexOf(fn)
+    if (at >= 0) list.splice(at, 1)
+  }
+}
+
+function subscribe(map: Map<Trait, ObserverFn[]>, trait: Trait, fn: ObserverFn): () => void {
+  let list = map.get(trait)
+  if (list === undefined) map.set(trait, (list = []))
+  return append(list, fn)
+}
+
 /**
  * An isolated container of entities, archetypes and trait storage. Every method
  * lives on the prototype, and every piece of internal state is symbol- or
@@ -95,6 +122,13 @@ export class World {
   #storeList: SparseStore[] = []
   #destroyed = false
 
+  readonly #ticks = new Ticks()
+  readonly #onAdd = new Map<Trait, ObserverFn[]>()
+  readonly #onRemove = new Map<Trait, ObserverFn[]>()
+  readonly #onChange = new Map<Trait, ObserverFn[]>()
+  readonly #boundaries: Boundary[] = []
+  #observerDepth = 0
+
   public constructor(options?: WorldOptions) {
     const pageSize = options?.pageSize ?? PAGE_SIZE
     const maxEntities = options?.maxEntities ?? DEFAULT_MAX_ENTITIES
@@ -114,7 +148,7 @@ export class World {
     this[$entities] = new EntityIndex(maxEntities)
     this[$traits] = new TraitRegistry()
     this[$archetypes] = new ArchetypeGraph(this[$traits], pageSize)
-    this[$queries] = new QueryCache(this[$traits], this[$archetypes])
+    this[$queries] = new QueryCache(this[$traits], this[$archetypes], this.#ticks)
 
     const entities = this[$entities]
     const root = this[$archetypes].root
@@ -137,12 +171,19 @@ export class World {
     entities.archetypes[id] = archetype.id
     entities.rows[id] = row
 
+    const tick = this.#ticks.tick
     for (let i = 0; i < items.length; i++) {
       const trait = traitOf(items[i])
       const value = valueOf(items[i])
-      if (trait[$options].storage === 'sparse') this.#store(trait).add(id, value)
-      else initTrait(archetype.columnsOf.get(trait[$id]), row, trait, value)
+      if (trait[$options].storage === 'sparse') this.#store(trait).add(id, value, tick)
+      else initTrait(archetype.columnsOf.get(trait[$id]), row, trait, value, tick)
     }
+
+    // Events fire only after every value is in place (SPEC §8.1).
+    if (this.#onAdd.size !== 0 || this.#ticks.added.size !== 0) {
+      for (let i = 0; i < items.length; i++) this.#attached(entity, id, traitOf(items[i]))
+    }
+    if (this.#boundaries.length !== 0) this.#crossed(entity, null, archetype)
     return entity
   }
 
@@ -165,15 +206,26 @@ export class World {
       archetype.setEntity(row, entity)
     }
 
+    const tick = this.#ticks.tick
     for (let i = 0; i < items.length; i++) {
       const trait = traitOf(items[i])
       const value = valueOf(items[i])
       if (trait[$options].storage === 'sparse') {
         const store = this.#store(trait)
-        for (let k = 0; k < n; k++) store.add(entityId(batch[k]), value)
+        for (let k = 0; k < n; k++) store.add(entityId(batch[k]), value, tick)
       } else {
         const columns = archetype.columnsOf.get(trait[$id])
-        for (let k = 0; k < n; k++) initTrait(columns, first + k, trait, value)
+        for (let k = 0; k < n; k++) initTrait(columns, first + k, trait, value, tick)
+      }
+    }
+
+    // All handlers for entity n fire before those for entity n+1 (SPEC §8.4).
+    if (this.#onAdd.size !== 0 || this.#ticks.added.size !== 0 || this.#boundaries.length !== 0) {
+      for (let k = 0; k < n; k++) {
+        const entity = batch[k] as Entity
+        const id = entityId(entity)
+        for (let i = 0; i < items.length; i++) this.#attached(entity, id, traitOf(items[i]))
+        this.#crossed(entity, null, archetype)
       }
     }
     return batch
@@ -185,6 +237,14 @@ export class World {
       this.#assertAlive(entity, id)
       assert(id !== WORLD_ENTITY_ID, 'the world entity cannot be despawned')
     }
+    // `onRemove` runs while the data is still intact (SPEC §8.1); handlers may
+    // mutate, so the exiting archetype is read afterwards.
+    if (this.#onRemove.size !== 0) {
+      for (const [trait, list] of this.#onRemove) {
+        if (list.length !== 0 && this.#hasTrait(id, trait)) this.#dispatch(list, entity)
+      }
+    }
+    if (this.#boundaries.length !== 0) this.#crossed(entity, this.#archetypeOf(id), null)
     this.#release(id)
   }
 
@@ -246,13 +306,7 @@ export class World {
     const subject = (world ? target : trait) as Trait
     const id = entityId(entity)
     if (__DEV__) this.#assertAlive(entity, id)
-
-    if (subject[$options].storage === 'sparse') {
-      const store = this.#stores.get(subject[$id])
-      return store !== undefined && store.slotOf(id) >= 0
-    }
-    const local = this[$traits].localId(subject)
-    return local >= 0 && maskHas(this.#archetypeOf(id).mask, local)
+    return this.#hasTrait(id, subject)
   }
 
   // --------------------------------------------------------------------- data
@@ -301,10 +355,73 @@ export class World {
       assert(columns !== undefined, 'this entity does not have that trait')
     }
     const row = this.#rowOf(trait, id)
+    const tick = this.#ticks.tick
 
-    if (typeof subject !== 'function') columns![(subject as Field)[$index]].set(row, written)
-    else if (trait[$kind] === 'aos') columns![0].set(row, written)
-    else writeStruct(trait[$plan], columns!, row, written as Record<string, unknown>)
+    if (typeof subject !== 'function') {
+      const column = columns![(subject as Field)[$index]]
+      column.set(row, written)
+      column.stamp(row, tick)
+    } else if (trait[$kind] === 'aos') {
+      columns![0].set(row, written)
+      columns![0].stamp(row, tick)
+    } else {
+      writeStruct(trait[$plan], columns!, row, written as Record<string, unknown>, tick)
+    }
+    this.#wrote(entity, trait)
+  }
+
+  /** Stamps the change tick without touching the data (SPEC §8.3). */
+  public changed(target: Entity | Trait, spec?: Trait): void {
+    const world = typeof target !== 'number'
+    const entity = world ? this.entity : (target as Entity)
+    const trait = (world ? target : spec) as Trait
+    const id = entityId(entity)
+    if (__DEV__) {
+      this.#assertAlive(entity, id)
+      assert(this.#hasTrait(id, trait), 'this entity does not have that trait')
+    }
+
+    const columns = this.#columnsOf(trait, id)
+    if (columns !== undefined) {
+      const row = this.#rowOf(trait, id)
+      const tick = this.#ticks.tick
+      for (let i = 0; i < columns.length; i++) columns[i].stamp(row, tick)
+    }
+    this.#wrote(entity, trait)
+  }
+
+  // ------------------------------------------------------------------- events
+
+  /** The monotonic change clock (SPEC §8.3). */
+  public get tick(): number {
+    return this.#ticks.tick
+  }
+
+  /** Advances the clock one tick and expires stale removal records (SPEC §8.3). */
+  public step(): void {
+    this.#ticks.step()
+  }
+
+  public onAdd(trait: Trait, fn: ObserverFn): () => void {
+    return subscribe(this.#onAdd, trait, fn)
+  }
+
+  public onRemove(trait: Trait, fn: ObserverFn): () => void {
+    return subscribe(this.#onRemove, trait, fn)
+  }
+
+  /** Subscribing is what promotes the trait to tracked (SPEC §8.3). */
+  public onChange(trait: Trait, fn: ObserverFn): () => void {
+    this[$archetypes].track(trait)
+    return subscribe(this.#onChange, trait, fn)
+  }
+
+  public onEnter(query: QueryResult, fn: ObserverFn): () => void {
+    return append(this.#boundary(query).enter, fn)
+  }
+
+  public onExit(query: QueryResult, fn: ObserverFn): () => void {
+    return append(this.#boundary(query).exit, fn)
   }
 
   // ------------------------------------------------------------------ queries
@@ -331,6 +448,10 @@ export class World {
     this[$queries].clear()
     this.#stores.clear()
     this.#storeList.length = 0
+    this.#onAdd.clear()
+    this.#onRemove.clear()
+    this.#onChange.clear()
+    this.#boundaries.length = 0
     freeWorldIds.push(this[$id])
   }
 
@@ -338,6 +459,70 @@ export class World {
 
   #archetypeOf(id: number): Archetype {
     return this[$archetypes].list[this[$entities].archetypes[id]]
+  }
+
+  #hasTrait(id: number, trait: Trait): boolean {
+    if (trait[$options].storage === 'sparse') {
+      const store = this.#stores.get(trait[$id])
+      return store !== undefined && store.slotOf(id) >= 0
+    }
+    const local = this[$traits].localId(trait)
+    return local >= 0 && maskHas(this.#archetypeOf(id).mask, local)
+  }
+
+  /** Handlers run immediately and may recurse into structural ops (SPEC §8.1, §8.4). */
+  #dispatch(list: ObserverFn[], entity: Entity): void {
+    if (__DEV__) {
+      assert(
+        this.#observerDepth < MAX_OBSERVER_DEPTH,
+        `observer cascade exceeded ${MAX_OBSERVER_DEPTH} levels — ` +
+          'an observer keeps triggering the operation it observes',
+      )
+      this.#observerDepth++
+      try {
+        for (let i = 0; i < list.length; i++) list[i](entity)
+      } finally {
+        this.#observerDepth--
+      }
+    } else {
+      for (let i = 0; i < list.length; i++) list[i](entity)
+    }
+  }
+
+  #wrote(entity: Entity, trait: Trait): void {
+    const list = this.#onChange.get(trait)
+    if (list !== undefined && list.length !== 0) this.#dispatch(list, entity)
+  }
+
+  /** The trait was just attached: records the gain and fires `onAdd`. */
+  #attached(entity: Entity, id: number, trait: Trait): void {
+    if (this.#ticks.added.size !== 0) this.#ticks.stampAdded(trait[$id], id)
+    const list = this.#onAdd.get(trait)
+    if (list !== undefined && list.length !== 0) this.#dispatch(list, entity)
+  }
+
+  /** Fires enter/exit for the queries whose match boundary the move crossed (SPEC §8.2). */
+  #crossed(entity: Entity, from: Archetype | null, to: Archetype | null): void {
+    const boundaries = this.#boundaries
+    for (let i = 0; i < boundaries.length; i++) {
+      const boundary = boundaries[i]
+      const plan = boundary.query[$plan]
+      const before = from !== null && plan.test(from.mask)
+      const after = to !== null && plan.test(to.mask)
+      if (before === after) continue
+      const list = after ? boundary.enter : boundary.exit
+      if (list.length !== 0) this.#dispatch(list, entity)
+    }
+  }
+
+  #boundary(query: QueryResult): Boundary {
+    const boundaries = this.#boundaries
+    for (let i = 0; i < boundaries.length; i++) {
+      if (boundaries[i].query === query) return boundaries[i]
+    }
+    const boundary: Boundary = { query, enter: [], exit: [] }
+    boundaries.push(boundary)
+    return boundary
   }
 
   /** The columns holding `trait` for `id`, or undefined when it does not have it. */
@@ -383,34 +568,68 @@ export class World {
     const from = this.#archetypeOf(id)
     const to = this.#destination(from, items, start)
     const row = to === from ? this[$entities].rows[id] : this.#move(id, entity, from, to)
+    const tick = this.#ticks.tick
+
+    // Freshly attached traits, collected so events fire only after every value
+    // is in place — a handler may itself mutate, which would stale `to`/`row`.
+    const announce = this.#onAdd.size !== 0 || this.#ticks.added.size !== 0
+    let fresh: Trait[] | null = null
 
     for (let i = start; i < items.length; i++) {
       const trait = traitOf(items[i])
       const value = valueOf(items[i])
       if (trait[$options].storage === 'sparse') {
-        this.#store(trait).add(id, value)
-      } else if (value !== undefined || !maskHas(from.mask, this[$traits].localId(trait))) {
+        if (this.#store(trait).add(id, value, tick) && announce) (fresh ??= []).push(trait)
+      } else if (!maskHas(from.mask, this[$traits].localId(trait))) {
+        initTrait(to.columnsOf.get(trait[$id]), row, trait, value, tick)
+        if (announce) (fresh ??= []).push(trait)
+      } else if (value !== undefined) {
         // A re-add without a value leaves the data alone; with one it re-seeds
         // the row from the defaults before writing (SPEC §4.4).
-        initTrait(to.columnsOf.get(trait[$id]), row, trait, value)
+        initTrait(to.columnsOf.get(trait[$id]), row, trait, value, tick)
       }
     }
+
+    if (fresh !== null) {
+      for (let i = 0; i < fresh.length; i++) this.#attached(entity, id, fresh[i])
+    }
+    if (to !== from && this.#boundaries.length !== 0) this.#crossed(entity, from, to)
   }
 
   #remove(entity: Entity, id: number, traits: readonly TraitLike[], start: number): void {
+    // `onRemove` runs first, while the data is still intact (SPEC §8.1). The
+    // transition is computed afterwards because handlers may themselves mutate.
+    if (this.#onRemove.size !== 0) {
+      for (let i = start; i < traits.length; i++) {
+        const trait = traitOf(traits[i])
+        const list = this.#onRemove.get(trait)
+        if (list !== undefined && list.length !== 0 && this.#hasTrait(id, trait)) {
+          this.#dispatch(list, entity)
+        }
+      }
+    }
+
     const graph = this[$archetypes]
+    const ticks = this.#ticks
     const from = this.#archetypeOf(id)
     let to = from
     for (let i = start; i < traits.length; i++) {
       const trait = traitOf(traits[i])
       if (trait[$options].storage === 'sparse') {
-        this.#stores.get(trait[$id])?.remove(id)
+        const store = this.#stores.get(trait[$id])
+        if (store !== undefined && store.remove(id)) ticks.logRemoved(entity, trait[$id])
         continue
       }
       const local = this[$traits].localId(trait)
-      if (local >= 0 && maskHas(to.mask, local)) to = graph.edgeRemove(to, local)
+      if (local >= 0 && maskHas(to.mask, local)) {
+        to = graph.edgeRemove(to, local)
+        ticks.logRemoved(entity, trait[$id])
+      }
     }
-    if (to !== from) this.#move(id, entity, from, to)
+    if (to !== from) {
+      this.#move(id, entity, from, to)
+      if (this.#boundaries.length !== 0) this.#crossed(entity, from, to)
+    }
   }
 
   /** Appends to `to`, carries the shared columns across, swap-removes from `from`. */
@@ -425,7 +644,10 @@ export class World {
       const target = to.columnsOf.get(traitIds[t])
       if (target === undefined) continue
       const columns = groups[t]
-      for (let i = 0; i < columns.length; i++) target[i].set(destination, columns[i].get(source))
+      for (let i = 0; i < columns.length; i++) {
+        target[i].set(destination, columns[i].get(source))
+        target[i].moveTick(destination, columns[i], source)
+      }
     }
 
     const moved = from.removeRow(source)

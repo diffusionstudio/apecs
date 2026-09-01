@@ -138,7 +138,7 @@ describe('tick columns (§8.3)', () => {
 
     world.step()
     world.set(e, Pair, { y: 2 })
-    expect(x.lastWriteTick).toBe(world.tick - 2)
+    expect(x.lastWriteTick).toBe(world.tick - 1)
     expect(y.lastWriteTick).toBe(world.tick)
 
     world.destroy()

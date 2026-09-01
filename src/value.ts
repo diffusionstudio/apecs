@@ -45,12 +45,13 @@ export function readStruct(
   return out
 }
 
-/** Writes only the fields `value` carries; typed arrays coerce on store. */
+/** Writes only the fields `value` carries; each written column is tick-stamped. */
 export function writeStruct(
   plan: Plan,
   columns: Column[],
   row: number,
   value: Record<string, unknown>,
+  tick: number,
 ): void {
   for (const key in value) {
     const node = plan[key]
@@ -58,8 +59,11 @@ export function writeStruct(
       if (__DEV__) assert(false, `"${key}" is not a field of this trait`)
       continue
     }
-    if ($index in node) columns[(node as Field)[$index]].set(row, value[key])
-    else writeStruct(node as Plan, columns, row, value[key] as Record<string, unknown>)
+    if ($index in node) {
+      const column = columns[(node as Field)[$index]]
+      column.set(row, value[key])
+      column.stamp(row, tick)
+    } else writeStruct(node as Plan, columns, row, value[key] as Record<string, unknown>, tick)
   }
 }
 
@@ -72,12 +76,18 @@ export function initTrait(
   row: number,
   trait: Trait,
   value: unknown,
+  tick: number,
 ): void {
   if (columns === undefined) return
   if (trait[$kind] === 'aos') {
     columns[0].set(row, value === undefined ? trait[$fields][0].factory!() : value)
+    columns[0].stamp(row, tick)
     return
   }
-  for (let i = 0; i < columns.length; i++) columns[i].init(row)
-  if (value !== undefined) writeStruct(trait[$plan], columns, row, value as Record<string, unknown>)
+  for (let i = 0; i < columns.length; i++) {
+    columns[i].init(row)
+    columns[i].stamp(row, tick)
+  }
+  if (value !== undefined)
+    writeStruct(trait[$plan], columns, row, value as Record<string, unknown>, tick)
 }

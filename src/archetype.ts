@@ -3,7 +3,7 @@ import { NULL_ENTITY, type Entity } from './entity'
 import { createMask, maskKey, maskWith, maskWithout, type Mask } from './mask'
 import type { Field } from './schema'
 import { $fields, $id, $index, $trait } from './symbols'
-import type { Trait } from './trait'
+import { setTracked, type Trait } from './trait'
 import type { TraitRegistry } from './registry'
 
 /**
@@ -125,6 +125,21 @@ export class ArchetypeGraph {
     private readonly pageSize: number,
   ) {
     this.root = this.create(createMask(0))
+  }
+
+  /**
+   * Promotes a trait to tracked: columns created from here on are born with
+   * tick storage, and the ones this world already holds are backfilled
+   * (SPEC §8.3).
+   */
+  public track(trait: Trait): void {
+    setTracked(trait)
+    const list = this.list
+    for (let i = 0; i < list.length; i++) {
+      const columns = list[i].columnsOf.get(trait[$id])
+      if (columns === undefined) continue
+      for (let c = 0; c < columns.length; c++) columns[c].track()
+    }
   }
 
   public edgeAdd(from: Archetype, local: number): Archetype {

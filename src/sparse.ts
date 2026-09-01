@@ -41,22 +41,25 @@ export class SparseStore {
     return this.columns[field[$index]]
   }
 
-  public add(id: number, value: unknown): void {
+  /** Returns whether the trait was newly attached, rather than re-seeded. */
+  public add(id: number, value: unknown, tick: number): boolean {
     const slot = this.slotOf(id)
     if (slot !== NO_SLOT) {
-      if (value !== undefined) initTrait(this.columns, slot, this.trait, value)
-      return
+      if (value !== undefined) initTrait(this.columns, slot, this.trait, value, tick)
+      return false
     }
     const fresh = this.size++
     this.reserve(id, this.size)
     this.slots[id] = fresh
     this.dense[fresh] = id
-    initTrait(this.columns, fresh, this.trait, value)
+    initTrait(this.columns, fresh, this.trait, value, tick)
+    return true
   }
 
-  public remove(id: number): void {
+  /** Returns whether the trait was actually present. */
+  public remove(id: number): boolean {
     const slot = this.slotOf(id)
-    if (slot === NO_SLOT) return
+    if (slot === NO_SLOT) return false
     const last = --this.size
     const columns = this.columns
     for (let i = 0; i < columns.length; i++) columns[i].swapRemove(slot, last)
@@ -64,6 +67,7 @@ export class SparseStore {
     this.dense[slot] = moved
     this.slots[moved] = slot
     this.slots[id] = NO_SLOT
+    return true
   }
 
   private reserve(id: number, rows: number): void {

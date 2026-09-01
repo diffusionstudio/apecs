@@ -11,8 +11,11 @@ import type { Trait } from './trait'
  */
 export interface Cursor {
   [$row]: number
-  /** Points the cursor at a page, and un-poisons it for the walk about to start. */
-  [$bind](columns: Column[], page: number): void
+  /**
+   * Points the cursor at a page, and un-poisons it for the walk about to
+   * start. Tracked cursors also take the tick their setters will stamp.
+   */
+  [$bind](columns: Column[], page: number, tick?: number): void
   [$poison](): void
 }
 
@@ -95,7 +98,7 @@ function slotPrefix(shapes: Shapes): string {
   return prefix
 }
 
-function accessors(members: readonly Member[], owner: string, p: string): string {
+function accessors(members: readonly Member[], owner: string, p: string, track: boolean): string {
   let source = ''
   for (const member of members) {
     const name = JSON.stringify(member.key)
@@ -105,34 +108,48 @@ function accessors(members: readonly Member[], owner: string, p: string): string
     }
     const guard = __DEV__ ? `if(${owner}.${p}d)T();` : ''
     const cell = `${owner}.${p}${member.slot}[${owner}[R]]`
+    // The tracked write is the data store plus two monomorphic tick stores:
+    // the per-row tick and the column scalar (SPEC §8.3).
+    const stamp = track
+      ? `;${owner}.${p}t${member.slot}[${owner}[R]]=${owner}.${p}w;` +
+        `${owner}.${p}c${member.slot}.lastWriteTick=${owner}.${p}w`
+      : ''
     source += `get ${name}(){${guard}return ${cell}${member.bool ? '!==0' : ''}}\n`
-    source += `set ${name}(v){${guard}${cell}=${member.bool ? 'v?1:0' : 'v'}}\n`
+    source += `set ${name}(v){${guard}${cell}=${member.bool ? 'v?1:0' : 'v'}${stamp}}\n`
   }
   return source
 }
 
-function generate(shapes: Shapes, width: number, _track: boolean): CursorClass {
+function generate(shapes: Shapes, width: number, track: boolean): CursorClass {
   const p = slotPrefix(shapes)
   let source = ''
 
   for (let s = 1; s < shapes.length; s++) {
     source += `class S${s}{constructor(o){this.${p}o=o}\n`
-    source += accessors(shapes[s], `this.${p}o`, p)
+    source += accessors(shapes[s], `this.${p}o`, p, track)
     source += '}\n'
   }
 
   source += 'return class Cursor{constructor(){this[R]=0;'
   if (__DEV__) source += `this.${p}d=false;`
   for (let i = 0; i < width; i++) source += `this.${p}${i}=null;`
+  if (track) {
+    source += `this.${p}w=0;`
+    for (let i = 0; i < width; i++) source += `this.${p}t${i}=null;this.${p}c${i}=null;`
+  }
   for (let s = 1; s < shapes.length; s++) source += `this.${p}s${s}=new S${s}(this);`
   source += '}\n'
 
-  source += `[B](c,g){`
+  source += `[B](c,g,w){`
   if (__DEV__) source += `this.${p}d=false;`
-  for (let i = 0; i < width; i++) source += `this.${p}${i}=c[${i}].pages[g];`
+  if (track) source += `this.${p}w=w;`
+  for (let i = 0; i < width; i++) {
+    source += `this.${p}${i}=c[${i}].pages[g];`
+    if (track) source += `this.${p}t${i}=c[${i}].ticks[g];this.${p}c${i}=c[${i}];`
+  }
   source += '}\n'
   source += `[P](){${__DEV__ ? `this.${p}d=true` : ''}}\n`
-  source += accessors(shapes[0], 'this', p)
+  source += accessors(shapes[0], 'this', p, track)
   source += '}'
 
   return new Function('B', 'R', 'P', 'T', source)($bind, $row, $poison, poisoned)
@@ -144,12 +161,18 @@ const $pages = Symbol('apecs.cursor.pages')
 const $subs = Symbol('apecs.cursor.subs')
 const $dead = Symbol('apecs.cursor.dead')
 const $owner = Symbol('apecs.cursor.owner')
+const $tickPages = Symbol('apecs.cursor.tickPages')
+const $columns = Symbol('apecs.cursor.columns')
+const $tick = Symbol('apecs.cursor.tick')
 
 interface Slots {
   [$row]: number
   [$pages]: ColumnPage[]
   [$subs]: readonly object[]
   [$dead]: boolean
+  [$tickPages]: Uint32Array[]
+  [$columns]: Column[]
+  [$tick]: number
 }
 
 interface Sub {
@@ -160,7 +183,12 @@ interface Sub {
  * The CSP path: same semantics through a field-index dispatch instead of a
  * generated one, at the cost of an extra load per access (SPEC §6.5).
  */
-function define(prototype: object, members: readonly Member[], root: (self: any) => Slots): void {
+function define(
+  prototype: object,
+  members: readonly Member[],
+  root: (self: any) => Slots,
+  track: boolean,
+): void {
   for (const member of members) {
     if (member.sub >= 0) {
       const index = member.sub - 1
@@ -183,7 +211,12 @@ function define(prototype: object, members: readonly Member[], root: (self: any)
       set(this: object, value: unknown) {
         const self = root(this)
         if (__DEV__ && self[$dead]) poisoned()
-        ;(self[$pages][slot] as unknown[])[self[$row]] = bool ? (value ? 1 : 0) : value
+        const row = self[$row]
+        ;(self[$pages][slot] as unknown[])[row] = bool ? (value ? 1 : 0) : value
+        if (track) {
+          self[$tickPages][slot][row] = self[$tick]
+          self[$columns][slot].lastWriteTick = self[$tick]
+        }
       },
       configurable: true,
     })
@@ -193,7 +226,7 @@ function define(prototype: object, members: readonly Member[], root: (self: any)
 const ownerOf = (self: Sub): Slots => self[$owner]
 const identity = (self: Slots): Slots => self
 
-function reflect(shapes: Shapes, width: number, _track: boolean): CursorClass {
+function reflect(shapes: Shapes, width: number, track: boolean): CursorClass {
   const subClasses: Array<new (owner: Slots) => Sub> = []
   for (let s = 1; s < shapes.length; s++) {
     const cls = class {
@@ -202,26 +235,38 @@ function reflect(shapes: Shapes, width: number, _track: boolean): CursorClass {
         this[$owner] = owner
       }
     }
-    define(cls.prototype, shapes[s], ownerOf as (self: any) => Slots)
+    define(cls.prototype, shapes[s], ownerOf as (self: any) => Slots, track)
     subClasses.push(cls)
   }
 
   const Cursor = class {
     [$row] = 0;
     [$dead] = false;
+    [$tick] = 0;
     [$pages]: ColumnPage[] = new Array(width).fill(null);
+    [$tickPages]: Uint32Array[] = new Array(width).fill(null);
+    [$columns]: Column[] = new Array(width).fill(null);
     [$subs] = subClasses.map((Sub) => new Sub(this as unknown as Slots))
 
-    public [$bind](columns: Column[], page: number): void {
+    public [$bind](columns: Column[], page: number, tick = 0): void {
       if (__DEV__) this[$dead] = false
       const pages = this[$pages]
       for (let i = 0; i < width; i++) pages[i] = columns[i].pages[page]
+      if (track) {
+        this[$tick] = tick
+        const tickPages = this[$tickPages]
+        const owners = this[$columns]
+        for (let i = 0; i < width; i++) {
+          tickPages[i] = columns[i].ticks![page]
+          owners[i] = columns[i]
+        }
+      }
     }
 
     public [$poison](): void {
       if (__DEV__) this[$dead] = true
     }
   }
-  define(Cursor.prototype, shapes[0], identity as (self: any) => Slots)
+  define(Cursor.prototype, shapes[0], identity as (self: any) => Slots, track)
   return Cursor as unknown as CursorClass
 }

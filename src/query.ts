@@ -2,13 +2,15 @@ import type { Archetype, ArchetypeGraph } from './archetype'
 import { Chunks } from './chunk'
 import type { Column } from './column'
 import { cursorClassFor, type Cursor } from './cursor'
-import type { Entity } from './entity'
+import { assert } from './debug'
+import { entityId, type Entity } from './entity'
 import { createMask, maskHas, maskIntersects, maskSuperset, maskWith, type Mask } from './mask'
 import type { TraitRegistry } from './registry'
 import {
   $archetypes,
   $bind,
   $id,
+  $kind,
   $options,
   $plan,
   $poison,
@@ -18,6 +20,7 @@ import {
   $terms,
   $trait,
 } from './symbols'
+import type { Ticks } from './ticks'
 import { isDataTerm, type Modifier, type Term } from './terms'
 import { Trait, type TraitInstance } from './trait'
 
@@ -200,6 +203,47 @@ function slotsOf(terms: readonly Term[]): Slot[] {
   return slots
 }
 
+const NO_TRAITS: readonly Trait[] = []
+const NO_IDS: readonly number[] = []
+
+/** The tick-based terms of a query, split by what each one is checked against (SPEC §8.3). */
+interface Filters {
+  /** Per-row tick columns. */
+  readonly changed: readonly Trait[]
+  /** Entity-indexed gain tables, by global trait id. */
+  readonly added: readonly number[]
+  /** The removal log, by global trait id. */
+  readonly removed: readonly number[]
+}
+
+function filtersOf(terms: readonly Term[]): Filters | null {
+  let changed: Trait[] | null = null
+  let added: number[] | null = null
+  let removed: number[] | null = null
+
+  for (const term of terms) {
+    if (traitOf(term) !== null) continue
+    const modifier = term as Modifier
+    const trait = traitOf(modifier[$terms][0] as Term)
+    if (trait === null) continue
+    switch (modifier[$term]) {
+      case 'changed':
+        if (__DEV__) assert(trait[$kind] !== 'tag', 'Changed() needs a data-bearing trait')
+        ;(changed ??= []).push(trait)
+        break
+      case 'added':
+        ;(added ??= []).push(trait[$id])
+        break
+      case 'removed':
+        ;(removed ??= []).push(trait[$id])
+        break
+    }
+  }
+
+  if (changed === null && added === null && removed === null) return null
+  return { changed: changed ?? NO_TRAITS, added: added ?? NO_IDS, removed: removed ?? NO_IDS }
+}
+
 /**
  * The three access tiers over one matching-archetype list. Every walk runs
  * archetypes and rows back to front, which is what makes mutating or despawning
@@ -213,6 +257,7 @@ export class QueryResult {
   readonly #key: string
   readonly #slots: readonly Slot[]
   readonly #args: unknown[]
+  readonly #ticks: Ticks
 
   /**
    * The per-archetype binding, split so the row loop only walks what actually
@@ -224,13 +269,29 @@ export class QueryResult {
   readonly #boxedColumn: Column[] = []
   readonly #boxedPage: unknown[][] = []
 
+  /** Tick filters and their per-run scratch, reused so a filtered walk allocates nothing. */
+  readonly #filters: Filters | null
+  readonly #changedColumns: Column[][] = []
+  readonly #addedTables: Uint32Array[] = []
+  readonly #removedSets: Set<number>[] = []
+  /** Each `Changed`/`Added`/`Removed` query keeps its own horizon (SPEC §8.3). */
+  #lastSeen = -1
+
   #chunks: Chunks | undefined
 
-  public constructor(cache: QueryCache, key: string, plan: QueryPlan, terms: readonly Term[]) {
+  public constructor(
+    cache: QueryCache,
+    key: string,
+    plan: QueryPlan,
+    terms: readonly Term[],
+    ticks: Ticks,
+  ) {
     this.#cache = cache
     this.#key = key
     this.#slots = slotsOf(terms)
     this.#args = new Array(this.#slots.length + 1).fill(null)
+    this.#ticks = ticks
+    this.#filters = filtersOf(terms)
     this[$plan] = plan
     this[$archetypes] = []
   }
@@ -274,6 +335,15 @@ export class QueryResult {
   }
 
   public each(fn: (...args: any[]) => void): void {
+    if (this.#filters === null) this.#eachAll(fn)
+    else this.#eachFiltered(fn)
+    if (__DEV__) {
+      const slots = this.#slots
+      for (let s = 0; s < slots.length; s++) slots[s].cursor?.[$poison]()
+    }
+  }
+
+  #eachAll(fn: (...args: any[]) => void): void {
     const archetypes = this[$archetypes]
     const args = this.#args
     const arity = args.length - 1
@@ -282,6 +352,7 @@ export class QueryResult {
     const boxedArg = this.#boxedArg
     const boxedColumn = this.#boxedColumn
     const boxedPage = this.#boxedPage
+    const tick = this.#ticks.tick
 
     for (let a = archetypes.length - 1; a >= 0; a--) {
       const archetype = archetypes[a]
@@ -294,7 +365,7 @@ export class QueryResult {
 
       for (let page = (rows - 1) >>> pageShift, i = (rows - 1) & pageMask; page >= 0; page--) {
         const handles = archetype.entities[page]
-        for (let c = 0; c < cursorCount; c++) cursors[c][$bind](cursorColumns[c], page)
+        for (let c = 0; c < cursorCount; c++) cursors[c][$bind](cursorColumns[c], page, tick)
         for (let b = 0; b < boxedCount; b++) boxedPage[b] = boxedColumn[b].pages[page] as unknown[]
 
         for (; i >= 0; i--) {
@@ -322,15 +393,111 @@ export class QueryResult {
         i = pageMask
       }
     }
+  }
 
-    if (__DEV__) {
-      const slots = this.#slots
-      for (let s = 0; s < slots.length; s++) slots[s].cursor?.[$poison]()
+  /**
+   * The same walk with a per-row tick predicate. A separate loop so the
+   * unfiltered path carries none of it (SPEC §8.3).
+   */
+  #eachFiltered(fn: (...args: any[]) => void): void {
+    const { changed, added, removed } = this.#filters!
+    const ticks = this.#ticks
+    const lastSeen = this.#lastSeen
+    this.#lastSeen = ticks.tick
+
+    // Removal records resolve to handle sets once per run; an empty set means
+    // the conjunction cannot match and the walk is skipped outright.
+    const removedSets = this.#removedSets
+    for (let r = 0; r < removed.length; r++) {
+      const set = (removedSets[r] ??= new Set())
+      set.clear()
+      ticks.collectRemoved(removed[r], lastSeen, set)
+      if (set.size === 0) return
+    }
+    const addedTables = this.#addedTables
+    for (let a = 0; a < added.length; a++) addedTables[a] = ticks.added.get(added[a])!
+
+    const archetypes = this[$archetypes]
+    const args = this.#args
+    const arity = args.length - 1
+    const cursors = this.#cursors
+    const cursorColumns = this.#cursorColumns
+    const boxedArg = this.#boxedArg
+    const boxedColumn = this.#boxedColumn
+    const boxedPage = this.#boxedPage
+    const changedColumns = this.#changedColumns
+
+    for (let a = archetypes.length - 1; a >= 0; a--) {
+      const archetype = archetypes[a]
+      const rows = archetype.rows
+      if (rows === 0 || !this.#bind(archetype)) continue
+      for (let t = 0; t < changed.length; t++)
+        changedColumns[t] = archetype.columnsOf.get(changed[t][$id])!
+
+      const { pageShift, pageMask } = archetype
+      const cursorCount = cursors.length
+      const boxedCount = boxedArg.length
+
+      for (let page = (rows - 1) >>> pageShift, i = (rows - 1) & pageMask; page >= 0; page--) {
+        const handles = archetype.entities[page]
+        for (let c = 0; c < cursorCount; c++) cursors[c][$bind](cursorColumns[c], page, ticks.tick)
+        for (let b = 0; b < boxedCount; b++) boxedPage[b] = boxedColumn[b].pages[page] as unknown[]
+
+        for (; i >= 0; i--) {
+          const entity = handles[i] as Entity
+          if (!this.#accept(entity, page, i, lastSeen)) continue
+          for (let c = 0; c < cursorCount; c++) cursors[c][$row] = i
+          for (let b = 0; b < boxedCount; b++) args[boxedArg[b]] = boxedPage[b][i]
+          switch (arity) {
+            case 0:
+              fn(entity)
+              break
+            case 1:
+              fn(args[0], entity)
+              break
+            case 2:
+              fn(args[0], args[1], entity)
+              break
+            case 3:
+              fn(args[0], args[1], args[2], entity)
+              break
+            default:
+              args[arity] = entity
+              fn.apply(undefined, args)
+          }
+        }
+        i = pageMask
+      }
     }
   }
 
+  #accept(entity: Entity, page: number, i: number, lastSeen: number): boolean {
+    const changedColumns = this.#changedColumns
+    for (let t = 0; t < changedColumns.length; t++) {
+      const columns = changedColumns[t]
+      let hit = false
+      for (let c = 0; c < columns.length && !hit; c++) hit = columns[c].ticks![page][i] > lastSeen
+      if (!hit) return false
+    }
+
+    const addedTables = this.#addedTables
+    if (addedTables.length !== 0) {
+      const id = entityId(entity)
+      for (let a = 0; a < addedTables.length; a++) {
+        const table = addedTables[a]
+        // A row the table has never reached carries the zero tick, which is
+        // exactly what lets a query's first run see pre-existing entities.
+        if ((id < table.length ? table[id] : 0) <= lastSeen) return false
+      }
+    }
+
+    const removedSets = this.#removedSets
+    for (let r = 0; r < removedSets.length; r++) if (!removedSets[r].has(entity)) return false
+    return true
+  }
+
   public chunks(): Chunks {
-    return (this.#chunks ??= new Chunks(this[$archetypes]))
+    return (this.#chunks ??= new Chunks(this[$archetypes], this.#ticks))
   }
 
   public dispose(): void {
@@ -415,11 +582,13 @@ export class QueryCache {
 
   readonly #traits: TraitRegistry
   readonly #graph: ArchetypeGraph
+  readonly #ticks: Ticks
   readonly #byKey = new Map<string, QueryResult>()
 
-  public constructor(traits: TraitRegistry, graph: ArchetypeGraph) {
+  public constructor(traits: TraitRegistry, graph: ArchetypeGraph, ticks: Ticks) {
     this.#traits = traits
     this.#graph = graph
+    this.#ticks = ticks
     graph.onCreate = (archetype) => this.#offer(archetype)
   }
 
@@ -427,7 +596,18 @@ export class QueryCache {
     const key = signatureOf(terms)
     let query = this.#byKey.get(key)
     if (query === undefined) {
-      query = new QueryResult(this, key, compileTerms(this.#traits, terms), terms)
+      // Before slots pick their cursor class: `Changed` promotes its trait to
+      // tracked and `Added` allocates the gain table (SPEC §8.3).
+      for (const term of terms) {
+        if (traitOf(term) !== null) continue
+        const modifier = term as Modifier
+        const trait = traitOf(modifier[$terms][0] as Term)
+        if (trait === null) continue
+        if (modifier[$term] === 'changed') this.#graph.track(trait)
+        else if (modifier[$term] === 'added') this.#ticks.trackAdded(trait[$id])
+      }
+
+      query = new QueryResult(this, key, compileTerms(this.#traits, terms), terms, this.#ticks)
       this.#byKey.set(key, query)
       this.live.push(query)
 

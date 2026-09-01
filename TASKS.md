@@ -129,7 +129,7 @@ Stage gate: **2-B complete.**
 | **T3.5** | `onEnter` / `onExit` fire on archetype transitions, spawn and despawn included (§8.2) |
 | **T3.6** | Dev warns once per call site when a tracked-trait `Store` is handed out and no `markChanged` follows (§6.6) |
 
-### 3-B — Implementation
+### 3-B [COMPLETED] — Implementation
 
 | ID | Impl task | → |
 | --- | --- | --- |

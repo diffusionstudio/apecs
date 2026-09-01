@@ -1,9 +1,10 @@
 import type { Archetype } from './archetype'
 import type { Column, ColumnPage } from './column'
-import { assert } from './debug'
+import { assert, warnOnce } from './debug'
 import type { Entity } from './entity'
 import type { Field, Plan } from './schema'
-import { $id, $index, $kind, $plan, $trait } from './symbols'
+import { $id, $index, $kind, $options, $plan, $trait } from './symbols'
+import type { Ticks } from './ticks'
 import type { Trait } from './trait'
 
 /**
@@ -59,6 +60,13 @@ export class Chunk {
   private archetype!: Archetype
   private page = 0
   private readonly views = new Map<number, StoreView>()
+  private readonly ticks: Ticks
+  /** Dev: tracked stores handed out this step, awaiting a `markChanged` (SPEC §6.6). */
+  private guards: Map<number, string> | null = null
+
+  public constructor(ticks: Ticks) {
+    this.ticks = ticks
+  }
 
   public entity(i: number): Entity {
     return this.entities[i] as Entity
@@ -67,6 +75,10 @@ export class Chunk {
   public get(trait: Trait): any {
     const columns = this.archetype.columnsOf.get(trait[$id])
     if (__DEV__) assert(columns !== undefined, 'this chunk does not hold that trait')
+    if (__DEV__ && trait[$options].track) {
+      const site = new Error().stack?.split('\n')[2] ?? 'unknown call site'
+      ;(this.guards ??= new Map()).set(trait[$id], site)
+    }
     if (trait[$kind] === 'aos') return columns![0].pages[this.page]
 
     let view = this.views.get(trait[$id])
@@ -75,6 +87,39 @@ export class Chunk {
       this.views.set(trait[$id], view)
     }
     return view.bind(columns!, this.page)
+  }
+
+  /**
+   * The explicit signal that a direct page write happened — the only thing
+   * `Changed()` filters and sorted views can see from this tier (SPEC §6.6).
+   */
+  public markChanged(trait: Trait, row?: number): void {
+    const columns = this.archetype.columnsOf.get(trait[$id])
+    if (__DEV__) assert(columns !== undefined, 'this chunk does not hold that trait')
+    if (__DEV__) this.guards?.delete(trait[$id])
+    if (columns === undefined) return
+    const tick = this.ticks.tick
+    for (let i = 0; i < columns.length; i++) {
+      const pages = columns[i].ticks
+      if (pages === null) continue
+      if (row === undefined) pages[this.page].fill(tick, 0, this.length)
+      else pages[this.page][row] = tick
+      columns[i].lastWriteTick = tick
+    }
+  }
+
+  /** @internal Dev: warns once per call site for stores that were never marked. */
+  public flushGuards(): void {
+    const guards = this.guards
+    if (guards === null || guards.size === 0) return
+    for (const site of guards.values()) {
+      warnOnce(
+        site,
+        'a store for a tracked trait left chunk iteration without markChanged — ' +
+          'Changed() filters and sorted queries cannot see direct page writes (SPEC §6.6)',
+      )
+    }
+    guards.clear()
   }
 
   public column(field: Field): ColumnPage {
@@ -98,14 +143,15 @@ export class Chunk {
  */
 export class Chunks implements Iterable<Chunk> {
   readonly #archetypes: readonly Archetype[]
-  readonly #chunk = new Chunk()
+  readonly #chunk: Chunk
   readonly #result: IteratorResult<Chunk> = { done: true, value: undefined as unknown as Chunk }
 
   #archetype = -1
   #page = -1
 
-  public constructor(archetypes: readonly Archetype[]) {
+  public constructor(archetypes: readonly Archetype[], ticks: Ticks) {
     this.#archetypes = archetypes
+    this.#chunk = new Chunk(ticks)
   }
 
   public [Symbol.iterator](): IterableIterator<Chunk> {
@@ -117,6 +163,8 @@ export class Chunks implements Iterable<Chunk> {
   public next(): IteratorResult<Chunk> {
     const archetypes = this.#archetypes
     const result = this.#result
+    // Only the step boundary knows a handed-out store was never marked.
+    if (__DEV__) this.#chunk.flushGuards()
 
     for (;;) {
       if (this.#page < 0) {

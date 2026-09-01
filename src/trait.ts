@@ -148,3 +148,8 @@ export class TraitImpl {
 }
 
 export const Trait = TraitImpl as unknown as TraitConstructor
+
+/** Flips the trait tracked; columns born afterwards allocate tick storage (SPEC §8.3). */
+export function setTracked(trait: Trait): void {
+  ;(trait[$options] as { track: boolean }).track = true
+}
