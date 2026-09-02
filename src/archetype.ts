@@ -2,6 +2,7 @@ import { Column } from './column'
 import { NULL_ENTITY, type Entity } from './entity'
 import { createMask, maskKey, maskWith, maskWithout, type Mask } from './mask'
 import type { Field } from './schema'
+import type { SortedView } from './sorted'
 import { $fields, $id, $index, $trait } from './symbols'
 import { setTracked, type Trait } from './trait'
 import type { TraitRegistry } from './registry'
@@ -28,6 +29,9 @@ export class Archetype {
   /** Pages of packed handles, one entry per row. */
   readonly entities: Float64Array[] = []
   public rows = 0
+
+  /** Sorted views over this archetype; empty for nearly all, so a row change costs one load (SPEC §6.7). */
+  readonly sortedViews: SortedView[] = []
 
   readonly pageSize: number
   readonly pageShift: number
@@ -71,6 +75,7 @@ export class Archetype {
     const row = this.rows++
     if (this.rows > this.capacity) this.reserve(this.rows)
     this.entities[row >>> this.pageShift][row & this.pageMask] = entity
+    this.invalidateViews()
     return row
   }
 
@@ -79,6 +84,7 @@ export class Archetype {
     const first = this.rows
     this.rows += n
     if (this.rows > this.capacity) this.reserve(this.rows)
+    this.invalidateViews()
     return first
   }
 
@@ -91,6 +97,7 @@ export class Archetype {
     const last = --this.rows
     const columns = this.columns
     for (let i = 0; i < columns.length; i++) columns[i].swapRemove(row, last)
+    this.invalidateViews()
     if (row === last) return NULL_ENTITY
     const moved = this.entityAt(last)
     this.setEntity(row, moved)
@@ -104,6 +111,11 @@ export class Archetype {
     this.capacity = pages * this.pageSize
     const columns = this.columns
     for (let i = 0; i < columns.length; i++) columns[i].compact(this.rows)
+  }
+
+  private invalidateViews(): void {
+    const views = this.sortedViews
+    for (let i = 0; i < views.length; i++) views[i].structuralDirty = true
   }
 
   private reserve(rows: number): void {

@@ -170,7 +170,7 @@ Stage gate: **3-B complete.**
 
 Stage gate: **4-B complete.**
 
-### 5-A — Tests
+### 5-A [COMPLETED] — Tests
 
 | ID | Test task |
 | --- | --- |
@@ -179,7 +179,7 @@ Stage gate: **4-B complete.**
 | **T5.3** | `clean` / `resort` / `rebuild` transitions — structural dirty via `archetype.sortedViews`, value dirty via column `lastWriteTick`, unsorted queries pay nothing, `markChanged` from a chunk schedules the resort (§6.7) |
 | **T5.4** | `isDirty` / `invalidate` / `rebuild`, comparator overload is always resort-dirty (§6.7) |
 
-### 5-B — Implementation
+### 5-B [COMPLETED] — Implementation
 
 | ID | Impl task | → |
 | --- | --- | --- |

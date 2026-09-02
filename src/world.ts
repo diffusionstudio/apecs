@@ -150,7 +150,13 @@ export class World {
     this[$entities] = new EntityIndex(maxEntities)
     this[$traits] = new TraitRegistry()
     this[$archetypes] = new ArchetypeGraph(this[$traits], pageSize)
-    this[$queries] = new QueryCache(this[$traits], this[$archetypes], this.#ticks, this.#iteration)
+    this[$queries] = new QueryCache(
+      this[$traits],
+      this[$archetypes],
+      this[$entities],
+      this.#ticks,
+      this.#iteration,
+    )
 
     const entities = this[$entities]
     const root = this[$archetypes].root
@@ -417,7 +423,7 @@ export class World {
   /** Subscribing is what promotes the trait to tracked (SPEC §8.3). */
   public onChange(trait: Trait, fn: ObserverFn): () => void {
     if (__DEV__) this.#assertNotDestroyed()
-    this[$archetypes].track(trait)
+    this[$queries].track(trait)
     return subscribe(this.#onChange, trait, fn)
   }
 

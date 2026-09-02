@@ -24,4 +24,5 @@ export { World } from './world'
 export type { EntityBatch, ObserverFn, WorldOptions } from './world'
 
 export type { QueryResult } from './query'
+export type { Comparator, DirtyLevel, SortedQueryResult } from './sorted'
 export type { Chunk } from './chunk'
