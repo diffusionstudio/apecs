@@ -10,7 +10,7 @@ export { Trait } from './trait'
 export type { TraitConstructor, TraitInstance, TraitOptions } from './trait'
 
 export { Relation } from './relation'
-export type { RelationConstructor, RelationOptions } from './relation'
+export type { Pair, RelationConstructor, RelationOptions } from './relation'
 
 export { bool, eid, f32, f64, i8, i16, i32, str, u8, u16, u32 } from './schema'
 export type { Field, Schema } from './schema'
@@ -21,8 +21,9 @@ export type { Modifier, Term, TermKind } from './terms'
 export type { Entity } from './entity'
 
 export { World } from './world'
-export type { EntityBatch, ObserverFn, WorldOptions } from './world'
+export type { EntityBatch, ObserverFn, Subject, WorldOptions } from './world'
 
 export type { QueryResult } from './query'
 export type { Comparator, DirtyLevel, SortedQueryResult } from './sorted'
+export type { IndexedQueryResult } from './materialized'
 export type { Chunk } from './chunk'

@@ -194,7 +194,7 @@ Stage gate: **4-B complete.**
 
 Stage gate: **5-B complete.**
 
-### 6-A — Tests
+### 6-A [COMPLETED] — Tests
 
 | ID | Test task |
 | --- | --- |
@@ -205,7 +205,7 @@ Stage gate: **5-B complete.**
 | **T6.5** | `Cascade` visits parents before children, depth maintained incrementally on re-parent, forces materialisation (no `chunks`), dev throws on cycle / non-exclusive relation (§7.6) |
 | **T6.6** | `eid` fields registered in the reverse index and patched to `NULL_ENTITY` on despawn; bare-`0` handle fields are not patched (§8.5) |
 
-### 6-B — Implementation
+### 6-B [COMPLETED] — Implementation
 
 | ID | Impl task | → |
 | --- | --- | --- |

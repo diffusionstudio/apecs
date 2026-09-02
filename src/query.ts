@@ -1,11 +1,13 @@
 import { snapshotRows, type Archetype, type ArchetypeGraph } from './archetype'
 import { Chunks } from './chunk'
 import { assert } from './debug'
-import type { Entity } from './entity'
+import { NULL_ENTITY, type Entity } from './entity'
 import type { EntityIndex } from './entity-index'
 import type { Frame, Iteration } from './iteration'
 import { createMask, maskHas, maskIntersects, maskSuperset, maskWith, type Mask } from './mask'
+import { IndexedQueryResult, type View } from './materialized'
 import type { TraitRegistry } from './registry'
+import { shapeOf, type Relation } from './relation'
 import type { Field } from './schema'
 import { SortedQueryResult, type Comparator } from './sorted'
 import {
@@ -20,8 +22,8 @@ import {
   $term,
   $terms,
   $trait,
-  $view,
 } from './symbols'
+import type { Relations } from './targets'
 import type { Ticks } from './ticks'
 import { With, type Modifier, type Term } from './terms'
 import { Trait, type TraitInstance } from './trait'
@@ -86,15 +88,35 @@ export class QueryPlan {
   }
 }
 
+/** An exclusive relation aimed at one entity: served by the target index, not the mask (SPEC §7.4). */
+function indexedTarget(term: Term): Entity {
+  if (term instanceof Trait) return NULL_ENTITY
+  const instance = term as TraitInstance
+  const trait = instance[$trait]
+  const target = instance[$target]
+  return trait !== undefined &&
+    typeof target === 'number' &&
+    target !== NULL_ENTITY &&
+    (trait as Relation)[$options].exclusive === true
+    ? target
+    : NULL_ENTITY
+}
+
 /** Mentioning a trait in a query registers it, so every term owns a mask bit. */
 function bitOf(traits: TraitRegistry, term: Term): number {
+  if (__DEV__) {
+    assert(
+      indexedTarget(term) === NULL_ENTITY,
+      'an exclusive relation with a target is only matched as a top-level term (SPEC §7.4)',
+    )
+  }
   const trait = termTrait(term)
   return trait === null ? -1 : traits.register(trait)
 }
 
 function compileNode(traits: TraitRegistry, term: Term): Node {
   const trait = termTrait(term)
-  if (trait !== null) return node(HAS, traits.register(trait))
+  if (trait !== null) return node(HAS, bitOf(traits, term))
 
   const modifier = term as Modifier
   const operands = modifier[$terms]
@@ -153,12 +175,17 @@ export function compileTerms(traits: TraitRegistry, terms: readonly Term[]): Que
   return new QueryPlan(all, none, nodes)
 }
 
-/** Structural, not by identity: a freshly built `Not(Velocity)` hashes the same. */
+/**
+ * Structural, not by identity: a freshly built `Not(Velocity)` hashes the
+ * same, and `R('*')` hashes as the bare relation it matches like (SPEC §7.3).
+ */
 function hash(term: Term): string {
-  const trait = termTrait(term)
-  if (trait !== null) {
-    if (term instanceof Trait) return `${trait[$id]}`
-    return `${trait[$id]}#${String((term as TraitInstance)[$target])}`
+  if (term instanceof Trait) return `${term[$id]}`
+  const instance = term as TraitInstance
+  if (instance[$trait] !== undefined) {
+    const target = instance[$target]
+    const id = instance[$trait][$id]
+    return typeof target === 'number' && target !== NULL_ENTITY ? `${id}#${target}` : `${id}`
   }
   const modifier = term as Modifier
   const operands = modifier[$terms]
@@ -195,8 +222,8 @@ export class QueryResult {
   /** Sorted views memoised on (field, direction) or comparator identity (SPEC §6.7). */
   #sorted: Map<Field | Comparator, SortedQueryResult> | null = null
   #sortedDescending: Map<Field | Comparator, SortedQueryResult> | null = null
-  /** Views whose archetype list is this one's; told about every archetype that joins. */
-  readonly #views: SortedQueryResult[] = []
+  /** Results layered over this archetype list; told about every archetype that joins. */
+  readonly #views: View[] = []
 
   public constructor(cache: QueryCache, key: string, plan: QueryPlan, terms: readonly Term[]) {
     this.#cache = cache
@@ -353,7 +380,7 @@ export class QueryResult {
     let memo = descending ? this.#sortedDescending : this.#sorted
     let sorted = memo?.get(by)
     if (sorted === undefined) {
-      sorted = this.#cache.sortBy(this, by, descending)
+      sorted = this.#cache.sortBy(this, by, descending, () => this.forget(by, descending))
       if (memo === null) {
         memo = new Map()
         if (descending) this.#sortedDescending = memo
@@ -369,24 +396,24 @@ export class QueryResult {
     // Views over a dead list would never learn of new archetypes.
     this.#sorted?.forEach((sorted) => sorted.dispose())
     this.#sortedDescending?.forEach((sorted) => sorted.dispose())
-    for (const sorted of this.#views.slice()) sorted.dispose()
+    for (const view of this.#views.slice()) view.dispose()
   }
 
-  /** @internal An archetype the plan accepted; the sorted views over this list register on it. */
+  /** @internal An archetype the plan accepted; the views over this list learn of it. */
   public admit(archetype: Archetype): void {
     this[$archetypes].push(archetype)
     const views = this.#views
-    for (let i = 0; i < views.length; i++) views[i][$view].watch(archetype)
+    for (let i = 0; i < views.length; i++) views[i].admit(archetype)
   }
 
   /** @internal */
-  public attach(sorted: SortedQueryResult): void {
-    this.#views.push(sorted)
+  public attach(view: View): void {
+    this.#views.push(view)
   }
 
   /** @internal */
-  public detach(sorted: SortedQueryResult): void {
-    const at = this.#views.indexOf(sorted)
+  public detach(view: View): void {
+    const at = this.#views.indexOf(view)
     if (at >= 0) this.#views.splice(at, 1)
   }
 
@@ -398,8 +425,8 @@ export class QueryResult {
   /** @internal Swaps in tracked cursors after a promotion (SPEC §8.3). */
   public retrack(trait: Trait): void {
     this.#binding.retrack(trait)
-    this.#sorted?.forEach((sorted) => sorted.retrack(trait))
-    this.#sortedDescending?.forEach((sorted) => sorted.retrack(trait))
+    const views = this.#views
+    for (let i = 0; i < views.length; i++) views[i].retrack(trait)
   }
 }
 
@@ -450,16 +477,20 @@ export class QueryCache {
   readonly iteration: Iteration
 
   readonly #traits: TraitRegistry
-  readonly #byKey = new Map<string, QueryResult>()
+  readonly #relations: Relations
+  /** Plain results and the materialised ones — `Cascade`, target queries — by signature. */
+  readonly #byKey = new Map<string, QueryResult | SortedQueryResult | IndexedQueryResult>()
 
   public constructor(
     traits: TraitRegistry,
+    relations: Relations,
     graph: ArchetypeGraph,
     entities: EntityIndex,
     ticks: Ticks,
     iteration: Iteration,
   ) {
     this.#traits = traits
+    this.#relations = relations
     this.graph = graph
     this.entities = entities
     this.ticks = ticks
@@ -467,30 +498,60 @@ export class QueryCache {
     graph.onCreate = (archetype) => this.#offer(archetype)
   }
 
+  /**
+   * The public surface stays `QueryResult`-shaped until the type work of
+   * stage 7; a `Cascade` term or an exclusive relation aimed at one entity
+   * yields a materialised result behind that shape (SPEC §7.4, §7.6).
+   */
   public get(terms: readonly Term[]): QueryResult {
     const key = signatureOf(terms)
     let query = this.#byKey.get(key)
     if (query === undefined) {
-      // Before the binding picks its cursor classes: `Changed` promotes its
-      // trait to tracked and `Added` allocates the gain table (SPEC §8.3).
-      for (const term of terms) {
-        if (termTrait(term) !== null) continue
-        const modifier = term as Modifier
-        const trait = termTrait(modifier[$terms][0] as Term)
-        if (trait === null) continue
-        if (modifier[$term] === 'changed') this.track(trait)
-        else if (modifier[$term] === 'added') this.ticks.trackAdded(trait[$id])
-      }
-
-      query = new QueryResult(this, key, compileTerms(this.#traits, terms), terms)
+      query = this.#build(terms, key)
       this.#byKey.set(key, query)
-      this.live.push(query)
-
-      const existing = this.graph.list
-      const plan = query[$plan]
-      for (let i = 0; i < existing.length; i++)
-        if (plan.test(existing[i].mask)) query.admit(existing[i])
     }
+    return query as QueryResult
+  }
+
+  #build(
+    terms: readonly Term[],
+    key: string,
+  ): QueryResult | SortedQueryResult | IndexedQueryResult {
+    const forget = () => void this.#byKey.delete(key)
+    for (let i = 0; i < terms.length; i++) {
+      const term = terms[i]
+      const target = indexedTarget(term)
+      if (target !== NULL_ENTITY) {
+        const relation = (term as TraitInstance)[$trait] as Relation
+        const base = this.get(terms.toSpliced(i, 1, relation))
+        const list = this.#relations.stateOf(relation).listFor(target)
+        return new IndexedQueryResult(base, list, terms, this, forget)
+      }
+      if (term instanceof Trait || (term as Modifier)[$term] !== 'cascade') continue
+      const relation = (term as Modifier)[$terms][0] as Relation
+      const base = this.get(terms.toSpliced(i, 1))
+      const state = this.#relations.stateOf(relation)
+      if (state.depths === null) state.enableDepths(this.entities, this.ticks.tick)
+      return new SortedQueryResult(base, terms, state, false, this, forget)
+    }
+
+    // Before the binding picks its cursor classes: `Changed` promotes its
+    // trait to tracked and `Added` allocates the gain table (SPEC §8.3).
+    for (const term of terms) {
+      if (termTrait(term) !== null) continue
+      const modifier = term as Modifier
+      const trait = termTrait(modifier[$terms][0] as Term)
+      if (trait === null) continue
+      if (modifier[$term] === 'changed') this.track(trait)
+      else if (modifier[$term] === 'added') this.ticks.trackAdded(trait[$id])
+    }
+
+    const query = new QueryResult(this, key, compileTerms(this.#traits, terms), terms)
+    this.live.push(query)
+    const existing = this.graph.list
+    const plan = query[$plan]
+    for (let i = 0; i < existing.length; i++)
+      if (plan.test(existing[i].mask)) query.admit(existing[i])
     return query
   }
 
@@ -503,6 +564,7 @@ export class QueryCache {
     parent: QueryResult,
     by: Field | Comparator,
     descending: boolean,
+    forget: () => void,
   ): SortedQueryResult {
     let base = parent
     if (typeof by === 'function') {
@@ -521,14 +583,16 @@ export class QueryCache {
       if (!maskHas(parent[$plan].all, this.#traits.register(trait)))
         base = this.get([...parent[$terms], With(trait)])
     }
-    return new SortedQueryResult(parent, base, by, descending, this)
+    return new SortedQueryResult(base, parent[$terms], by, descending, this, forget)
   }
 
   /**
    * Promotes a trait to tracked. Queries built before the promotion carry
-   * untracked cursors, so they are re-slotted here (SPEC §8.3).
+   * untracked cursors, so they are re-slotted here. A pair promotes its
+   * relation, and every pair with it (SPEC §8.3).
    */
   public track(trait: Trait): void {
+    trait = shapeOf(trait)
     if (trait[$options].track) return
     this.graph.track(trait)
     const live = this.live

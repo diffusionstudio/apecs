@@ -6,7 +6,7 @@ import type { Frame, Iteration } from './iteration'
 import type { Field, Plan } from './schema'
 import { $id, $index, $kind, $options, $plan, $trait } from './symbols'
 import type { Ticks } from './ticks'
-import type { Trait } from './trait'
+import { traitOf, type TraitLike } from './value'
 
 /**
  * Per-field typed-array views over one page, rebuilt in place when the chunk
@@ -76,7 +76,8 @@ export class Chunk {
     return this.entities[i] as Entity
   }
 
-  public get(trait: Trait): any {
+  public get(item: TraitLike): any {
+    const trait = traitOf(item)
     const columns = this.archetype.columnsOf.get(trait[$id])
     if (__DEV__) assert(columns !== undefined, 'this chunk does not hold that trait')
     if (__DEV__ && trait[$options].track) {
@@ -97,7 +98,8 @@ export class Chunk {
    * The explicit signal that a direct page write happened — the only thing
    * `Changed()` filters and sorted views can see from this tier (SPEC §6.6).
    */
-  public markChanged(trait: Trait, row?: number): void {
+  public markChanged(item: TraitLike, row?: number): void {
+    const trait = traitOf(item)
     const columns = this.archetype.columnsOf.get(trait[$id])
     if (__DEV__) assert(columns !== undefined, 'this chunk does not hold that trait')
     if (__DEV__) this.guards?.delete(trait[$id])

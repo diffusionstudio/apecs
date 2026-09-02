@@ -16,27 +16,51 @@ import {
   type Entity,
 } from './entity'
 import { Iteration } from './iteration'
-import { maskHas } from './mask'
+import { maskHas, type Mask } from './mask'
 import { QueryCache, type QueryResult } from './query'
 import { TraitRegistry } from './registry'
+import {
+  WILDCARD,
+  isExclusive,
+  isRelation,
+  pairOf,
+  pairsTo,
+  peekPair,
+  releasePair,
+  type Pair,
+  type Relation,
+} from './relation'
 import type { Field } from './schema'
 import { SparseStore } from './sparse'
 import {
   $archetypes,
   $entities,
+  $fields,
   $id,
   $index,
   $kind,
   $options,
   $plan,
   $queries,
+  $relation,
+  $relations,
+  $target,
   $traits,
   $trait,
 } from './symbols'
+import { Relations } from './targets'
 import type { Term } from './terms'
 import { Ticks } from './ticks'
-import type { Trait } from './trait'
-import { initTrait, readStruct, traitOf, valueOf, writeStruct, type TraitLike } from './value'
+import type { Trait, TraitInstance } from './trait'
+import {
+  initTrait,
+  readStruct,
+  targetOf,
+  traitOf,
+  valueOf,
+  writeStruct,
+  type TraitLike,
+} from './value'
 
 export interface WorldOptions {
   /** Rows per column page; a power of two (SPEC §10.2). */
@@ -47,6 +71,9 @@ export interface WorldOptions {
 
 /** Anything that yields packed handles: an array, a `Float64Array`, a query result. */
 export type EntityBatch = Iterable<number>
+
+/** What `get` and `set` address: a trait, one of its fields, or a relation pair (SPEC §4.4, §7.3). */
+export type Subject = Trait | Field | TraitInstance
 
 const DEFAULT_MAX_ENTITIES = 1 << 20
 const INITIAL_FREE_CAPACITY = 64
@@ -89,10 +116,26 @@ function append(list: ObserverFn[], fn: ObserverFn): () => void {
   }
 }
 
-function subscribe(map: Map<Trait, ObserverFn[]>, trait: Trait, fn: ObserverFn): () => void {
-  let list = map.get(trait)
-  if (list === undefined) map.set(trait, (list = []))
+/** Observers key on the trait, or on the interned pair for `R(target)` (SPEC §8.1). */
+function observerKey(item: TraitLike): Trait {
+  if (typeof item === 'function') return item
+  const target = item[$target]
+  return typeof target === 'number' && target !== NULL_ENTITY
+    ? pairOf(item[$trait] as Relation, target)
+    : item[$trait]
+}
+
+function subscribe(map: Map<Trait, ObserverFn[]>, item: TraitLike, fn: ObserverFn): () => void {
+  const key = observerKey(item)
+  let list = map.get(key)
+  if (list === undefined) map.set(key, (list = []))
   return append(list, fn)
+}
+
+/** The trait `subject` addresses: a field's owner, a pair for a non-exclusive target. */
+function subjectTrait(subject: Subject): Trait {
+  if (typeof subject === 'function') return subject
+  return $index in subject ? (subject as Field)[$trait] : traitOf(subject as TraitInstance)
 }
 
 /**
@@ -106,6 +149,7 @@ export class World {
   declare readonly [$entities]: EntityIndex
   declare readonly [$traits]: TraitRegistry
   declare readonly [$archetypes]: ArchetypeGraph
+  declare readonly [$relations]: Relations
   declare readonly [$queries]: QueryCache
 
   /** Id 1 in every world; world traits are ordinary traits on it (SPEC §5.4). */
@@ -130,6 +174,8 @@ export class World {
   readonly #onChange = new Map<Trait, ObserverFn[]>()
   readonly #boundaries: Boundary[] = []
   #observerDepth = 0
+  /** Sources an `onTargetDespawn: 'despawn'` queued; drained iteratively, never recursed (SPEC §7.5). */
+  readonly #pending: number[] = []
 
   public constructor(options?: WorldOptions) {
     const pageSize = options?.pageSize ?? PAGE_SIZE
@@ -150,8 +196,10 @@ export class World {
     this[$entities] = new EntityIndex(maxEntities)
     this[$traits] = new TraitRegistry()
     this[$archetypes] = new ArchetypeGraph(this[$traits], pageSize)
+    this[$relations] = new Relations(this[$traits])
     this[$queries] = new QueryCache(
       this[$traits],
+      this[$relations],
       this[$archetypes],
       this[$entities],
       this.#ticks,
@@ -171,11 +219,11 @@ export class World {
 
   public spawn(...items: TraitLike[]): Entity {
     if (__DEV__) this.#assertNotDestroyed()
+    // Resolved before the id is taken, so a rejected item leaves nothing half-made.
+    const archetype = this.#destination(this[$archetypes].root, items, 0)
     const entities = this[$entities]
     const id = this.#allocId()
     const entity = packEntity(id, entities.generations[id], this[$id])
-
-    const archetype = this.#destination(this[$archetypes].root, items, 0)
     const row = archetype.appendRow(entity)
     entities.archetypes[id] = archetype.id
     entities.rows[id] = row
@@ -185,12 +233,18 @@ export class World {
       const trait = traitOf(items[i])
       const value = valueOf(items[i])
       if (trait[$options].storage === 'sparse') this.#store(trait).add(id, value, tick)
-      else initTrait(archetype.columnsOf.get(trait[$id]), row, trait, value, tick)
+      else {
+        const columns = archetype.columnsOf.get(trait[$id])
+        initTrait(columns, row, trait, value, tick)
+        if (isExclusive(trait))
+          this.#link(trait, entity, id, columns!, row, targetOf(items[i]) as Entity, tick)
+      }
     }
 
     // Events fire only after every value is in place (SPEC §8.1).
     if (this.#onAdd.size !== 0 || this.#ticks.added.size !== 0) {
-      for (let i = 0; i < items.length; i++) this.#attached(entity, id, traitOf(items[i]))
+      for (let i = 0; i < items.length; i++)
+        this.#attached(entity, id, traitOf(items[i]), targetOf(items[i]) as Entity)
     }
     if (this.#boundaries.length !== 0) this.#crossed(entity, null, archetype)
     return entity
@@ -199,11 +253,10 @@ export class World {
   /** One archetype transition for the whole batch instead of `n` (SPEC §4.3). */
   public spawnMany(n: number, ...items: TraitLike[]): Float64Array {
     if (__DEV__) this.#assertNotDestroyed()
-    const batch = new Float64Array(n > 0 ? n : 0)
-    if (batch.length === 0) return batch
-
-    const entities = this[$entities]
+    if (!(n > 0)) return new Float64Array(0)
     const archetype = this.#destination(this[$archetypes].root, items, 0)
+    const batch = new Float64Array(n)
+    const entities = this[$entities]
     const first = archetype.appendRows(n)
 
     for (let k = 0; k < n; k++) {
@@ -226,6 +279,13 @@ export class World {
       } else {
         const columns = archetype.columnsOf.get(trait[$id])
         for (let k = 0; k < n; k++) initTrait(columns, first + k, trait, value, tick)
+        if (isExclusive(trait)) {
+          const target = targetOf(items[i]) as Entity
+          for (let k = 0; k < n; k++) {
+            const entity = batch[k] as Entity
+            this.#link(trait, entity, entityId(entity), columns!, first + k, target, tick)
+          }
+        }
       }
     }
 
@@ -234,7 +294,8 @@ export class World {
       for (let k = 0; k < n; k++) {
         const entity = batch[k] as Entity
         const id = entityId(entity)
-        for (let i = 0; i < items.length; i++) this.#attached(entity, id, traitOf(items[i]))
+        for (let i = 0; i < items.length; i++)
+          this.#attached(entity, id, traitOf(items[i]), targetOf(items[i]) as Entity)
         this.#crossed(entity, null, archetype)
       }
     }
@@ -248,6 +309,7 @@ export class World {
       assert(id !== WORLD_ENTITY_ID, 'the world entity cannot be despawned')
     }
     this.#despawn(entity, id)
+    this.#drain()
   }
 
   public despawnMany(batch: EntityBatch): void {
@@ -306,34 +368,31 @@ export class World {
     }
   }
 
-  public has(target: Entity | Trait, trait?: Trait): boolean {
+  public has(target: Entity | TraitLike, item?: TraitLike): boolean {
     const world = typeof target !== 'number'
     const entity = world ? this.entity : (target as Entity)
-    const subject = (world ? target : trait) as Trait
+    const subject = (world ? target : item) as TraitLike
     const id = entityId(entity)
     if (__DEV__) this.#assertAlive(entity, id)
-    return this.#hasTrait(id, subject)
+    return this.#has(id, subject)
   }
 
   // --------------------------------------------------------------------- data
 
-  public get(target: Entity | Trait | Field, spec?: Trait | Field | object, out?: object): any {
+  public get(target: Entity | Subject, spec?: Subject | object, out?: object): any {
     const world = typeof target !== 'number'
     const entity = world ? this.entity : (target as Entity)
-    const subject = (world ? target : spec) as Trait | Field
+    const subject = (world ? target : spec) as Subject
     const into = (world ? spec : out) as Record<string, unknown> | undefined
     const id = entityId(entity)
     if (__DEV__) this.#assertAlive(entity, id)
 
-    const trait = typeof subject === 'function' ? (subject as Trait) : (subject as Field)[$trait]
+    const trait = subjectTrait(subject)
     const columns = this.#columnsOf(trait, id)
-    if (__DEV__) {
-      assert(trait[$kind] !== 'tag', 'a tag carries no value to get')
-      assert(columns !== undefined, 'this entity does not have that trait')
-    }
+    if (__DEV__) this.#assertReadable(trait, columns)
     const row = this.#rowOf(trait, id)
 
-    if (typeof subject !== 'function') {
+    if (typeof subject !== 'function' && $index in subject) {
       const field = subject as Field
       const raw = columns![field[$index]].get(row)
       return field.kind === 'bool' ? raw !== 0 : raw
@@ -342,28 +401,21 @@ export class World {
     return readStruct(trait[$plan], columns!, row, into ?? {})
   }
 
-  public set(
-    target: Entity | Trait | Field,
-    spec?: Trait | Field | unknown,
-    value?: unknown,
-  ): void {
+  public set(target: Entity | Subject, spec?: Subject | unknown, value?: unknown): void {
     const world = typeof target !== 'number'
     const entity = world ? this.entity : (target as Entity)
-    const subject = (world ? target : spec) as Trait | Field
+    const subject = (world ? target : spec) as Subject
     const written = world ? spec : value
     const id = entityId(entity)
     if (__DEV__) this.#assertAlive(entity, id)
 
-    const trait = typeof subject === 'function' ? (subject as Trait) : (subject as Field)[$trait]
+    const trait = subjectTrait(subject)
     const columns = this.#columnsOf(trait, id)
-    if (__DEV__) {
-      assert(trait[$kind] !== 'tag', 'a tag carries no value to set')
-      assert(columns !== undefined, 'this entity does not have that trait')
-    }
+    if (__DEV__) this.#assertReadable(trait, columns)
     const row = this.#rowOf(trait, id)
     const tick = this.#ticks.tick
 
-    if (typeof subject !== 'function') {
+    if (typeof subject !== 'function' && $index in subject) {
       const column = columns![(subject as Field)[$index]]
       column.set(row, written)
       column.stamp(row, tick)
@@ -373,14 +425,14 @@ export class World {
     } else {
       writeStruct(trait[$plan], columns!, row, written as Record<string, unknown>, tick)
     }
-    this.#wrote(entity, trait)
+    this.#wrote(entity, id, trait)
   }
 
   /** Stamps the change tick without touching the data (SPEC §8.3). */
-  public changed(target: Entity | Trait, spec?: Trait): void {
+  public changed(target: Entity | TraitLike, spec?: TraitLike): void {
     const world = typeof target !== 'number'
     const entity = world ? this.entity : (target as Entity)
-    const trait = (world ? target : spec) as Trait
+    const trait = traitOf((world ? target : spec) as TraitLike)
     const id = entityId(entity)
     if (__DEV__) {
       this.#assertAlive(entity, id)
@@ -393,7 +445,37 @@ export class World {
       const tick = this.#ticks.tick
       for (let i = 0; i < columns.length; i++) columns[i].stamp(row, tick)
     }
-    this.#wrote(entity, trait)
+    this.#wrote(entity, id, trait)
+  }
+
+  // ---------------------------------------------------------------- relations
+
+  /** The one target of an exclusive relation, or `NULL_ENTITY` (SPEC §7.3). */
+  public target(entity: Entity, relation: Relation): Entity {
+    const id = entityId(entity)
+    if (__DEV__) {
+      this.#assertAlive(entity, id)
+      assert(
+        isExclusive(relation),
+        'target() reads an exclusive relation — targets() iterates the rest (SPEC §7.3)',
+      )
+    }
+    return this.#targetOf(id, relation)
+  }
+
+  /** Every target of a relation on `entity`; a cold-path copy (SPEC §7.3). */
+  public targets(entity: Entity, relation: Relation): Entity[] {
+    const id = entityId(entity)
+    if (__DEV__) this.#assertAlive(entity, id)
+    if (isExclusive(relation)) {
+      const target = this.#targetOf(id, relation)
+      return target === NULL_ENTITY ? [] : [target]
+    }
+    const pairs: Pair[] = []
+    this.#pairsIn(this.#archetypeOf(id).mask, relation, pairs)
+    const out: Entity[] = new Array(pairs.length)
+    for (let i = 0; i < pairs.length; i++) out[i] = pairs[i][$target]
+    return out
   }
 
   // ------------------------------------------------------------------- events
@@ -410,20 +492,20 @@ export class World {
     this.#ticks.step()
   }
 
-  public onAdd(trait: Trait, fn: ObserverFn): () => void {
+  public onAdd(trait: TraitLike, fn: ObserverFn): () => void {
     if (__DEV__) this.#assertNotDestroyed()
     return subscribe(this.#onAdd, trait, fn)
   }
 
-  public onRemove(trait: Trait, fn: ObserverFn): () => void {
+  public onRemove(trait: TraitLike, fn: ObserverFn): () => void {
     if (__DEV__) this.#assertNotDestroyed()
     return subscribe(this.#onRemove, trait, fn)
   }
 
   /** Subscribing is what promotes the trait to tracked (SPEC §8.3). */
-  public onChange(trait: Trait, fn: ObserverFn): () => void {
+  public onChange(trait: TraitLike, fn: ObserverFn): () => void {
     if (__DEV__) this.#assertNotDestroyed()
-    this[$queries].track(trait)
+    this[$queries].track(observerKey(trait))
     return subscribe(this.#onChange, trait, fn)
   }
 
@@ -494,6 +576,7 @@ export class World {
     this.#destroyed = true
     this[$queries].clear()
     this[$archetypes].dispose()
+    this[$relations].clear()
     this.#stores.clear()
     this.#storeList.length = 0
     this.#onAdd.clear()
@@ -501,6 +584,7 @@ export class World {
     this.#onChange.clear()
     this.#boundaries.length = 0
     this.#iteration.clear()
+    this.#pending.length = 0
     freeWorldIds.push(this[$id])
   }
 
@@ -514,6 +598,18 @@ export class World {
     if (this.#onRemove.size !== 0) this.#removing(entity, id)
     if (this.#boundaries.length !== 0) this.#crossed(entity, this.#archetypeOf(id), null)
     this.#release(id)
+    this.#resolveTargets(entity)
+    if (this[$archetypes].refs.length !== 0) this.#patchRefs(entity)
+  }
+
+  /** Despawns what a `'despawn'` policy queued, each of which may queue more (SPEC §7.5). */
+  #drain(): void {
+    const pending = this.#pending
+    while (pending.length !== 0) {
+      const entity = pending.pop()! as Entity
+      const id = entityId(entity)
+      if (this[$entities].isAlive(id, entityGeneration(entity))) this.#despawn(entity, id)
+    }
   }
 
   /**
@@ -525,12 +621,28 @@ export class World {
       const generation = this[$entities].generations[id]
       if (generation !== 0) this.#despawn(packEntity(id, generation, this[$id]), id)
     }
+    this.#drain()
   }
 
   /** `onRemove` for every trait the entity holds, while its data is still intact (SPEC §8.1). */
   #removing(entity: Entity, id: number): void {
-    for (const [trait, list] of this.#onRemove) {
-      if (list.length !== 0 && this.#hasTrait(id, trait)) this.#dispatch(list, entity)
+    for (const [key, list] of this.#onRemove) {
+      if (list.length === 0) continue
+      const relation = (key as Pair)[$relation]
+      if (relation !== undefined) {
+        const target = (key as Pair)[$target]
+        const held = isExclusive(relation)
+          ? this.#targetOf(id, relation) === target
+          : this.#hasTrait(id, key)
+        if (held) this.#dispatch(list, entity, target)
+      } else if (isExclusive(key)) {
+        const target = this.#targetOf(id, key)
+        if (target !== NULL_ENTITY) this.#dispatch(list, entity, target)
+      } else if (isRelation(key)) {
+        const pairs: Pair[] = []
+        this.#pairsIn(this.#archetypeOf(id).mask, key, pairs)
+        for (let i = 0; i < pairs.length; i++) this.#dispatch(list, entity, pairs[i][$target])
+      } else if (this.#hasTrait(id, key)) this.#dispatch(list, entity, undefined)
     }
   }
 
@@ -543,8 +655,45 @@ export class World {
     return local >= 0 && maskHas(this.#archetypeOf(id).mask, local)
   }
 
+  /** `has` with a target also checks the target: the column for an exclusive relation (SPEC §7.2). */
+  #has(id: number, item: TraitLike): boolean {
+    const trait = traitOf(item)
+    if (!this.#hasTrait(id, trait)) return false
+    const target = targetOf(item)
+    return (
+      typeof target !== 'number' ||
+      target === NULL_ENTITY ||
+      !isExclusive(trait) ||
+      this.#targetOf(id, trait) === target
+    )
+  }
+
+  #targetOf(id: number, relation: Relation): Entity {
+    const columns = this.#archetypeOf(id).columnsOf.get(relation[$id])
+    if (columns === undefined) return NULL_ENTITY
+    return columns[columns.length - 1].get(this[$entities].rows[id]) as Entity
+  }
+
+  /** The pairs of `relation` set in `mask`; returns how many, pushing them into `into`. */
+  #pairsIn(mask: Mask, relation: Relation, into: Pair[] | null): number {
+    const traits = this[$traits].list
+    let found = 0
+    for (let block = 0; block < mask.length; block++) {
+      let bits = mask[block]
+      while (bits !== 0) {
+        const lowest = bits & -bits
+        bits ^= lowest
+        const trait = traits[(block << 5) + (31 - Math.clz32(lowest))]
+        if ((trait as Pair)[$relation] !== relation) continue
+        found++
+        into?.push(trait as Pair)
+      }
+    }
+    return found
+  }
+
   /** Handlers run immediately and may recurse into structural ops (SPEC §8.1, §8.4). */
-  #dispatch(list: ObserverFn[], entity: Entity): void {
+  #dispatch(list: ObserverFn[], entity: Entity, target: Entity | undefined): void {
     if (__DEV__) {
       assert(
         this.#observerDepth < MAX_OBSERVER_DEPTH,
@@ -553,25 +702,50 @@ export class World {
       )
       this.#observerDepth++
       try {
-        for (let i = 0; i < list.length; i++) list[i](entity)
+        for (let i = 0; i < list.length; i++) list[i](entity, target)
       } finally {
         this.#observerDepth--
       }
     } else {
-      for (let i = 0; i < list.length; i++) list[i](entity)
+      for (let i = 0; i < list.length; i++) list[i](entity, target)
     }
   }
 
-  #wrote(entity: Entity, trait: Trait): void {
-    const list = this.#onChange.get(trait)
-    if (list !== undefined && list.length !== 0) this.#dispatch(list, entity)
+  /**
+   * Fires the lists an event on `trait` reaches: a pair's own and its
+   * relation's; an exclusive relation's own and, if one was ever subscribed,
+   * the pair for its target; a plain trait's own, with no target (SPEC §8.1).
+   */
+  #emit(map: Map<Trait, ObserverFn[]>, entity: Entity, trait: Trait, target: Entity): void {
+    const relation = (trait as Pair)[$relation]
+    if (relation !== undefined) {
+      this.#fire(map.get(relation), entity, (trait as Pair)[$target])
+      this.#fire(map.get(trait), entity, (trait as Pair)[$target])
+    } else if (target !== NULL_ENTITY) {
+      this.#fire(map.get(trait), entity, target)
+      const pair = peekPair(trait as Relation, target)
+      if (pair !== undefined) this.#fire(map.get(pair), entity, target)
+    } else this.#fire(map.get(trait), entity, undefined)
+  }
+
+  #fire(list: ObserverFn[] | undefined, entity: Entity, target: Entity | undefined): void {
+    if (list !== undefined && list.length !== 0) this.#dispatch(list, entity, target)
+  }
+
+  #wrote(entity: Entity, id: number, trait: Trait): void {
+    if (this.#onChange.size === 0) return
+    const target = isExclusive(trait) ? this.#targetOf(id, trait) : NULL_ENTITY
+    this.#emit(this.#onChange, entity, trait, target)
   }
 
   /** The trait was just attached: records the gain and fires `onAdd`. */
-  #attached(entity: Entity, id: number, trait: Trait): void {
-    if (this.#ticks.added.size !== 0) this.#ticks.stampAdded(trait[$id], id)
-    const list = this.#onAdd.get(trait)
-    if (list !== undefined && list.length !== 0) this.#dispatch(list, entity)
+  #attached(entity: Entity, id: number, trait: Trait, target: Entity): void {
+    if (this.#ticks.added.size !== 0) {
+      this.#ticks.stampAdded(trait[$id], id)
+      const relation = (trait as Pair)[$relation]
+      if (relation !== undefined) this.#ticks.stampAdded(relation[$id], id)
+    }
+    if (this.#onAdd.size !== 0) this.#emit(this.#onAdd, entity, trait, target)
   }
 
   /** Fires enter/exit for the queries whose match boundary the move crossed (SPEC §8.2). */
@@ -584,7 +758,7 @@ export class World {
       const after = to !== null && plan.test(to.mask)
       if (before === after) continue
       const list = after ? boundary.enter : boundary.exit
-      if (list.length !== 0) this.#dispatch(list, entity)
+      if (list.length !== 0) this.#dispatch(list, entity, undefined)
     }
   }
 
@@ -620,18 +794,32 @@ export class World {
       store = new SparseStore(trait, this[$options].pageSize)
       this.#stores.set(trait[$id], store)
       this.#storeList.push(store)
+      const fields = trait[$fields]
+      for (let i = 0; i < fields.length; i++)
+        if (fields[i].kind === 'eid') this[$archetypes].refs.push(store.columns[i])
     }
     return store
   }
 
-  /** Walks the add edges once per table trait; sparse traits leave the graph alone. */
+  /**
+   * Walks the add edges once per table trait; sparse traits leave the graph
+   * alone. A pair first raises its relation's bit, so `R('*')` stays a plain
+   * archetype match and every pair archetype descends from one prefix (SPEC §7.4).
+   */
   #destination(from: Archetype, items: readonly TraitLike[], start: number): Archetype {
     const graph = this[$archetypes]
+    const traits = this[$traits]
     let to = from
     for (let i = start; i < items.length; i++) {
       const trait = traitOf(items[i])
+      if (__DEV__) this.#assertAddable(trait, targetOf(items[i]))
       if (trait[$options].storage === 'sparse') continue
-      const local = this[$traits].register(trait)
+      const relation = (trait as Pair)[$relation]
+      if (relation !== undefined) {
+        const bit = traits.register(relation)
+        if (!maskHas(to.mask, bit)) to = graph.edgeAdd(to, bit)
+      }
+      const local = traits.register(trait)
       if (!maskHas(to.mask, local)) to = graph.edgeAdd(to, local)
     }
     return to
@@ -642,20 +830,38 @@ export class World {
     const to = this.#destination(from, items, start)
     const row = to === from ? this[$entities].rows[id] : this.#move(id, entity, from, to)
     const tick = this.#ticks.tick
+    const traits = this[$traits]
 
     // Freshly attached traits, collected so events fire only after every value
     // is in place — a handler may itself mutate, which would stale `to`/`row`.
     const announce = this.#onAdd.size !== 0 || this.#ticks.added.size !== 0
-    let fresh: Trait[] | null = null
+    let fresh: TraitLike[] | null = null
 
     for (let i = start; i < items.length; i++) {
-      const trait = traitOf(items[i])
-      const value = valueOf(items[i])
+      const item = items[i]
+      const trait = traitOf(item)
+      const value = valueOf(item)
       if (trait[$options].storage === 'sparse') {
-        if (this.#store(trait).add(id, value, tick) && announce) (fresh ??= []).push(trait)
-      } else if (!maskHas(from.mask, this[$traits].localId(trait))) {
-        initTrait(to.columnsOf.get(trait[$id]), row, trait, value, tick)
-        if (announce) (fresh ??= []).push(trait)
+        if (this.#store(trait).add(id, value, tick) && announce) (fresh ??= []).push(item)
+      } else if (!maskHas(from.mask, traits.localId(trait))) {
+        const columns = to.columnsOf.get(trait[$id])
+        initTrait(columns, row, trait, value, tick)
+        if (isExclusive(trait))
+          this.#link(trait, entity, id, columns!, row, targetOf(item) as Entity, tick)
+        if (announce) (fresh ??= []).push(item)
+      } else if (isExclusive(trait)) {
+        const columns = to.columnsOf.get(trait[$id])!
+        const moved = this.#retarget(
+          trait,
+          entity,
+          id,
+          columns,
+          row,
+          targetOf(item) as Entity,
+          value,
+          tick,
+        )
+        if (moved && announce) (fresh ??= []).push(item)
       } else if (value !== undefined) {
         // A re-add without a value leaves the data alone; with one it re-seeds
         // the row from the defaults before writing (SPEC §4.4).
@@ -664,45 +870,137 @@ export class World {
     }
 
     if (fresh !== null) {
-      for (let i = 0; i < fresh.length; i++) this.#attached(entity, id, fresh[i])
+      for (let i = 0; i < fresh.length; i++)
+        this.#attached(entity, id, traitOf(fresh[i]), targetOf(fresh[i]) as Entity)
     }
     if (to !== from && this.#boundaries.length !== 0) this.#crossed(entity, from, to)
   }
 
-  #remove(entity: Entity, id: number, traits: readonly TraitLike[], start: number): void {
+  /** Writes the target column and registers the source with the index (SPEC §7.4). */
+  #link(
+    relation: Relation,
+    entity: Entity,
+    id: number,
+    columns: Column[],
+    row: number,
+    target: Entity,
+    tick: number,
+  ): void {
+    const column = columns[columns.length - 1]
+    column.set(row, target)
+    column.stamp(row, tick)
+    const state = this[$relations].stateOf(relation)
+    state.link(id, entity, target)
+    if (state.depths !== null) state.reroot(entity, state.depthOf(target) + 1, tick)
+  }
+
+  /**
+   * The entity already carries the relation: a column write plus two index
+   * edits, and no archetype transition. Returns whether the target changed;
+   * the old pair's `onRemove` fires first, the new one's `onAdd` is the
+   * caller's to announce (SPEC §7.4).
+   */
+  #retarget(
+    relation: Relation,
+    entity: Entity,
+    id: number,
+    columns: Column[],
+    row: number,
+    target: Entity,
+    value: unknown,
+    tick: number,
+  ): boolean {
+    const column = columns[columns.length - 1]
+    const previous = column.get(row) as Entity
+    const moved = previous !== target
+    if (moved) {
+      if (this.#onRemove.size !== 0) this.#emit(this.#onRemove, entity, relation, previous)
+      this.#unlink(relation, entity, id, previous, tick)
+    }
+    if (value !== undefined) initTrait(columns, row, relation, value, tick)
+    if (moved) this.#link(relation, entity, id, columns, row, target, tick)
+    else if (value !== undefined) {
+      column.set(row, target)
+      column.stamp(row, tick)
+    }
+    return moved
+  }
+
+  #unlink(relation: Relation, entity: Entity, id: number, target: Entity, tick: number): void {
+    const state = this[$relations].stateOf(relation)
+    state.unlink(id, target)
+    if (state.depths !== null) state.reroot(entity, 0, tick)
+  }
+
+  #remove(entity: Entity, id: number, items: readonly TraitLike[], start: number): void {
     // `onRemove` runs first, while the data is still intact (SPEC §8.1). The
     // transition is computed afterwards because handlers may themselves mutate.
     if (this.#onRemove.size !== 0) {
-      for (let i = start; i < traits.length; i++) {
-        const trait = traitOf(traits[i])
-        const list = this.#onRemove.get(trait)
-        if (list !== undefined && list.length !== 0 && this.#hasTrait(id, trait)) {
-          this.#dispatch(list, entity)
-        }
-      }
+      for (let i = start; i < items.length; i++) this.#leaving(entity, id, items[i])
     }
 
     const graph = this[$archetypes]
+    const traits = this[$traits]
     const ticks = this.#ticks
     const from = this.#archetypeOf(id)
+    const row = this[$entities].rows[id]
     let to = from
-    for (let i = start; i < traits.length; i++) {
-      const trait = traitOf(traits[i])
+    for (let i = start; i < items.length; i++) {
+      const item = items[i]
+      const trait = traitOf(item)
       if (trait[$options].storage === 'sparse') {
         const store = this.#stores.get(trait[$id])
         if (store !== undefined && store.remove(id)) ticks.logRemoved(entity, trait[$id])
         continue
       }
-      const local = this[$traits].localId(trait)
-      if (local >= 0 && maskHas(to.mask, local)) {
-        to = graph.edgeRemove(to, local)
-        ticks.logRemoved(entity, trait[$id])
+      const local = traits.localId(trait)
+      if (local < 0 || !maskHas(to.mask, local)) continue
+
+      if (isExclusive(trait)) {
+        const columns = from.columnsOf.get(trait[$id])!
+        const current = columns[columns.length - 1].get(row) as Entity
+        const target = targetOf(item)
+        if (typeof target === 'number' && target !== NULL_ENTITY && target !== current) continue
+        this.#unlink(trait, entity, id, current, ticks.tick)
+      } else if (isRelation(trait)) {
+        // Bare or wildcard: every pair goes, then the relation bit they held up.
+        const pairs: Pair[] = []
+        this.#pairsIn(to.mask, trait, pairs)
+        for (let p = 0; p < pairs.length; p++) {
+          to = graph.edgeRemove(to, traits.localId(pairs[p]))
+          ticks.logRemoved(entity, pairs[p][$id])
+        }
+      }
+      to = graph.edgeRemove(to, local)
+      ticks.logRemoved(entity, trait[$id])
+
+      const relation = (trait as Pair)[$relation]
+      if (relation !== undefined && this.#pairsIn(to.mask, relation, null) === 0) {
+        to = graph.edgeRemove(to, traits.localId(relation))
+        ticks.logRemoved(entity, relation[$id])
       }
     }
     if (to !== from) {
       this.#move(id, entity, from, to)
       if (this.#boundaries.length !== 0) this.#crossed(entity, from, to)
     }
+  }
+
+  /** `onRemove` for one item of a `remove` call, if the entity actually holds it. */
+  #leaving(entity: Entity, id: number, item: TraitLike): void {
+    const trait = traitOf(item)
+    if (isExclusive(trait)) {
+      const current = this.#targetOf(id, trait)
+      const target = targetOf(item)
+      if (current === NULL_ENTITY) return
+      if (typeof target === 'number' && target !== NULL_ENTITY && target !== current) return
+      this.#emit(this.#onRemove, entity, trait, current)
+    } else if (isRelation(trait)) {
+      const pairs: Pair[] = []
+      this.#pairsIn(this.#archetypeOf(id).mask, trait, pairs)
+      for (let p = 0; p < pairs.length; p++)
+        this.#emit(this.#onRemove, entity, pairs[p], NULL_ENTITY)
+    } else if (this.#hasTrait(id, trait)) this.#emit(this.#onRemove, entity, trait, NULL_ENTITY)
   }
 
   /** Appends to `to`, carries the shared columns across, swap-removes from `from`. */
@@ -736,6 +1034,17 @@ export class World {
     const row = entities.rows[id]
     const archetype = this.#archetypeOf(id)
     if (__DEV__) this.#iteration.assertRemovable(archetype, row)
+
+    // The entity's own links leave the index while its target column is still there.
+    const states = this[$relations].list
+    for (let i = 0; i < states.length; i++) {
+      const state = states[i]
+      if (!maskHas(archetype.mask, state.local)) continue
+      const columns = archetype.columnsOf.get(state.relation[$id])!
+      state.unlink(id, columns[columns.length - 1].get(row) as Entity)
+      state.forget(id)
+    }
+
     const moved = archetype.removeRow(row)
     if (moved !== NULL_ENTITY) entities.rows[entityId(moved)] = row
 
@@ -749,6 +1058,83 @@ export class World {
     // The generation field is 12 bits; on wrap the id is retired, never reissued,
     // so a stale handle can never alias a live row (SPEC §4.1).
     if (generation < MAX_GENERATION) this.#recycle(id, generation + 1)
+  }
+
+  /** Applies `onTargetDespawn` to everything that pointed at the dead entity (SPEC §7.5). */
+  #resolveTargets(entity: Entity): void {
+    const tick = this.#ticks.tick
+    const states = this[$relations].list
+    for (let s = 0; s < states.length; s++) {
+      const state = states[s]
+      const list = state.lists.get(entity)
+      if (list === undefined) continue
+      const policy = state.relation[$options].onTargetDespawn
+      if (policy === 'orphan') {
+        // The dead target counts for nothing, so its orphans sit right under the roots.
+        if (state.depths !== null)
+          for (let i = 0; i < list.length; i++) state.reroot(list.items[i] as Entity, 1, tick)
+        continue
+      }
+      if (policy === 'despawn') {
+        for (let i = 0; i < list.length; i++) this.#pending.push(list.items[i])
+      } else {
+        // Each removal unlinks the source, so the list drains from its tail.
+        while (list.length !== 0) {
+          const source = list.items[list.length - 1] as Entity
+          this.#remove(source, entityId(source), state.only, 0)
+        }
+      }
+      state.lists.delete(entity)
+    }
+
+    const pairs = pairsTo(entity)
+    if (pairs === null) return
+    const archetypes = this[$archetypes].list
+    for (let p = 0; p < pairs.length; p++) {
+      const pair = pairs[p]
+      const policy = pair[$relation][$options].onTargetDespawn
+      if (policy === 'orphan') continue
+      const local = this[$traits].localId(pair)
+      if (local >= 0) {
+        const only = [pair]
+        for (let a = archetypes.length - 1; a >= 0; a--) {
+          const archetype = archetypes[a]
+          if (!maskHas(archetype.mask, local)) continue
+          if (policy === 'despawn') {
+            for (let row = archetype.rows - 1; row >= 0; row--)
+              this.#pending.push(archetype.entityAt(row))
+          } else {
+            while (archetype.rows !== 0) {
+              const source = archetype.entityAt(archetype.rows - 1)
+              this.#remove(source, entityId(source), only, 0)
+            }
+          }
+        }
+      }
+      releasePair(pair)
+    }
+  }
+
+  /** Every `eid` reference to the dead entity becomes `NULL_ENTITY`, tick-stamped (SPEC §8.5). */
+  #patchRefs(entity: Entity): void {
+    const refs = this[$archetypes].refs
+    const tick = this.#ticks.tick
+    for (let r = 0; r < refs.length; r++) {
+      const column = refs[r]
+      const pages = column.pages
+      const ticks = column.ticks
+      for (let p = 0; p < pages.length; p++) {
+        const page = pages[p] as Float64Array
+        for (let i = 0; i < page.length; i++) {
+          if (page[i] !== entity) continue
+          page[i] = NULL_ENTITY
+          if (ticks !== null) {
+            ticks[p][i] = tick
+            column.lastWriteTick = tick
+          }
+        }
+      }
+    }
   }
 
   #allocId(): number {
@@ -804,5 +1190,34 @@ export class World {
       `entity ${entity} belongs to world ${entityWorld(entity)}, not ${this[$id]}`,
     )
     assert(this[$entities].isAlive(id, entityGeneration(entity)), `entity ${entity} is not alive`)
+  }
+
+  /** Dev: a relation is added with one live target of this world (SPEC §7.2). */
+  #assertAddable(trait: Trait, target: Entity | '*'): void {
+    if (isRelation(trait)) {
+      assert(target !== WILDCARD, "'*' matches any target and cannot be added")
+      assert(
+        trait[$options].exclusive,
+        'a non-exclusive relation is added with a target: world.add(e, Likes(target))',
+      )
+      assert(
+        target !== NULL_ENTITY,
+        'an exclusive relation is added with a target: world.add(e, ChildOf(target))',
+      )
+      this.#assertAlive(target as Entity, entityId(target as Entity))
+    } else {
+      const pair = trait as Pair
+      if (pair[$relation] !== undefined) this.#assertAlive(pair[$target], entityId(pair[$target]))
+    }
+  }
+
+  /** Dev: the entity holds `trait`, and it is something `get` / `set` can address (SPEC §7.3). */
+  #assertReadable(trait: Trait, columns: Column[] | undefined): void {
+    assert(trait[$kind] !== 'tag', 'a tag carries no value to get or set')
+    assert(
+      !isRelation(trait) || trait[$options].exclusive,
+      'a non-exclusive relation is read and written through a target: world.get(e, Likes(target))',
+    )
+    assert(columns !== undefined, 'this entity does not have that trait')
   }
 }

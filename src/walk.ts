@@ -3,16 +3,17 @@ import type { Column } from './column'
 import { cursorClassFor, type Cursor } from './cursor'
 import { assert } from './debug'
 import { entityId, type Entity } from './entity'
+import { shapeOf } from './relation'
 import { $id, $kind, $options, $poison, $term, $terms, $trait } from './symbols'
 import type { Ticks } from './ticks'
 import { isDataTerm, type Modifier, type Term } from './terms'
 import { Trait, type TraitInstance } from './trait'
+import { traitOf } from './value'
 
-/** The trait a term constrains, or null for a modifier. */
+/** The trait a term constrains — a pair for a non-exclusive target — or null for a modifier. */
 export function termTrait(term: Term): Trait | null {
   if (term instanceof Trait) return term as Trait
-  const trait = (term as TraitInstance)[$trait]
-  return trait === undefined ? null : trait
+  return $trait in term ? traitOf(term as TraitInstance) : null
 }
 
 /** One data-bearing term — one argument position of the `each` callback. */
@@ -23,7 +24,7 @@ class Slot {
   public cursor: Cursor | null
 
   public constructor(trait: Trait, optional: boolean) {
-    const cls = cursorClassFor(trait, trait[$options].track)
+    const cls = cursorClassFor(shapeOf(trait), trait[$options].track)
     this.trait = trait
     this.optional = optional
     this.cursor = cls === null ? null : new cls()
@@ -89,7 +90,7 @@ export class Binding {
     const slots = this.slots
     for (let s = 0; s < slots.length; s++) {
       const slot = slots[s]
-      if (slot.trait === trait && slot.cursor !== null)
+      if (shapeOf(slot.trait) === trait && slot.cursor !== null)
         slot.cursor = new (cursorClassFor(trait, true)!)()
     }
   }

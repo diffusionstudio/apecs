@@ -1,6 +1,6 @@
 import { assert } from './debug'
 import { Relation } from './relation'
-import { $kind, $term, $terms, $trait } from './symbols'
+import { $kind, $options, $term, $terms, $trait } from './symbols'
 import { Trait } from './trait'
 import type { TraitInstance } from './trait'
 
@@ -66,7 +66,12 @@ export function Changed(trait: Term): Modifier<'changed'> {
 }
 
 export function Cascade(relation: Term): Modifier<'cascade'> {
-  if (__DEV__) assert(relation instanceof Relation, 'Cascade() takes an exclusive relation')
+  if (__DEV__) {
+    assert(
+      relation instanceof Relation && relation[$options].exclusive,
+      'Cascade() takes an exclusive relation',
+    )
+  }
   return term('cascade', [relation])
 }
 

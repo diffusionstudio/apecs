@@ -78,6 +78,11 @@ const DEFAULT_OPTIONS = { storage: 'table', track: false } as const
 /** Ids start at 1 so a zeroed slot never names a trait. */
 let nextTraitId = 1
 
+/** Relation pairs draw from the same id space as traits, since they own columns like one. */
+export function allocTraitId(): number {
+  return nextTraitId++
+}
+
 export function makeInstance(trait: Trait, target: Entity | '*', value: unknown): TraitInstance {
   return { [$trait]: trait, [$target]: target, [$value]: value }
 }
@@ -111,7 +116,7 @@ export class TraitImpl {
     const self = ((a?: unknown, b?: unknown) => self[$make](a, b)) as unknown as TraitState
     Object.setPrototypeOf(self, new.target.prototype)
 
-    self[$id] = nextTraitId++
+    self[$id] = allocTraitId()
     self[$kind] = kind
     self[$fields] = fields
     self[$schema] = schema

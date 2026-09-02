@@ -1,18 +1,38 @@
 import type { Column } from './column'
 import { assert } from './debug'
+import { NULL_ENTITY, type Entity } from './entity'
+import { pairOf, type Relation, type Wildcard } from './relation'
 import type { Field, Plan } from './schema'
-import { $fields, $index, $kind, $plan, $trait, $value } from './symbols'
+import { $fields, $index, $kind, $options, $plan, $target, $trait, $value } from './symbols'
 import type { Trait, TraitInstance } from './trait'
 
 /** A trait passed bare, or paired with an initial value (SPEC §3.4). */
 export type TraitLike = Trait | TraitInstance
 
+/**
+ * The trait that stores `item`. A non-exclusive relation aimed at an entity
+ * resolves to its pair; everything else to the trait itself (SPEC §7.4).
+ */
 export function traitOf(item: TraitLike): Trait {
-  return typeof item === 'function' ? item : item[$trait]
+  if (typeof item === 'function') return item
+  const trait = (item as TraitInstance)[$trait]
+  // A pair is a trait that is not callable; it names itself.
+  if (trait === undefined) return item as unknown as Trait
+  const target = (item as TraitInstance)[$target]
+  return typeof target === 'number' &&
+    target !== NULL_ENTITY &&
+    !(trait as Relation)[$options].exclusive
+    ? pairOf(trait as Relation, target)
+    : trait
+}
+
+/** `NULL_ENTITY` unless `item` is a relation instance or a pair. */
+export function targetOf(item: TraitLike): Entity | Wildcard {
+  return typeof item === 'function' ? NULL_ENTITY : (item as TraitInstance)[$target]
 }
 
 export function valueOf(item: TraitLike): unknown {
-  return typeof item === 'function' ? undefined : item[$value]
+  return typeof item === 'function' ? undefined : (item as TraitInstance)[$value]
 }
 
 /** Columns hold `0`/`1`; the declared type is `boolean` (SPEC §3.2). */

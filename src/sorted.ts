@@ -1,19 +1,21 @@
 import type { Archetype } from './archetype'
 import type { Column } from './column'
 import { ApecsError } from './debug'
-import { entityGeneration, entityId, type Entity } from './entity'
-import type { EntityIndex } from './entity-index'
-import type { Iteration } from './iteration'
-import type { QueryCache, QueryResult } from './query'
+import type { Entity } from './entity'
+import { ListWalk, type View } from './materialized'
+import type { QueryCache, QueryPlan, QueryResult } from './query'
 import type { Field } from './schema'
 import { sortByKey } from './sort'
-import { $archetypes, $bind, $row, $terms, $view } from './symbols'
+import { $archetypes, $plan, $terms, $view } from './symbols'
+import { TargetIndex } from './targets'
+import type { Term } from './terms'
 import type { Ticks } from './ticks'
 import type { Trait } from './trait'
-import { Binding, RowFilter, invoke } from './walk'
 
 export type Comparator = (a: Entity, b: Entity) => number
 export type DirtyLevel = 'clean' | 'resort' | 'rebuild'
+/** A numeric field, a comparator, or a relation's depth table for `Cascade` (SPEC §6.7, §7.6). */
+export type SortKey = Field | Comparator | TargetIndex
 
 /**
  * The memoised order behind a sorted query. Every matching archetype holds it
@@ -41,6 +43,7 @@ export class SortedView {
   public walks = 0
 
   readonly #field: Field | null
+  readonly #depths: TargetIndex | null
   readonly #sign: number
   /** The key column of each matching archetype, parallel to `archetypes`. */
   readonly #columns: Column[] = []
@@ -49,16 +52,18 @@ export class SortedView {
 
   public constructor(
     archetypes: readonly Archetype[],
-    field: Field | null,
+    key: SortKey,
     descending: boolean,
-    compare: Comparator | null,
     ticks: Ticks,
   ) {
     this.archetypes = archetypes
-    this.#field = field
+    this.#field = typeof key === 'function' || key instanceof TargetIndex ? null : key
+    this.#depths = key instanceof TargetIndex ? key : null
     this.#sign = descending ? -1 : 1
     this.#compare =
-      compare === null ? null : (a, b) => compare(this.list[a] as Entity, this.list[b] as Entity)
+      typeof key !== 'function'
+        ? null
+        : (a, b) => key(this.list[a] as Entity, this.list[b] as Entity)
     this.#ticks = ticks
     for (let i = 0; i < archetypes.length; i++) this.watch(archetypes[i])
   }
@@ -89,8 +94,9 @@ export class SortedView {
    */
   public get valueDirty(): boolean {
     if (this.#compare !== null) return true
-    const columns = this.#columns
     const stamp = this.stamp.value
+    if (this.#depths !== null) return this.#depths.depthTick >= stamp
+    const columns = this.#columns
     for (let i = 0; i < columns.length; i++) if (columns[i].lastWriteTick >= stamp) return true
     return false
   }
@@ -145,11 +151,11 @@ export class SortedView {
 
   #sort(): void {
     const order = this.order
-    if (this.#compare === null) {
-      this.#extract()
+    if (this.#compare !== null) order.sort(this.#compare)
+    else {
+      if (this.#depths !== null) this.#extractDepths()
+      else this.#extract()
       sortByKey(order, this.keys)
-    } else {
-      order.sort(this.#compare)
     }
     const { list, entities, length } = this
     for (let i = 0; i < length; i++) entities[i] = list[order[i]]
@@ -176,6 +182,17 @@ export class SortedView {
     }
   }
 
+  /** Depth is entity-indexed, and an entity the table never reached is a root (SPEC §7.6). */
+  #extractDepths(): void {
+    const { list, keys, length } = this
+    const depths = this.#depths!.depths!
+    const bound = depths.length
+    for (let i = 0; i < length; i++) {
+      const id = list[i] >>> 0
+      keys[i] = id < bound ? depths[id] : 0
+    }
+  }
+
   #grow(n: number): void {
     const capacity = Math.max(n, this.list.length * 2)
     this.list = new Float64Array(capacity)
@@ -185,53 +202,38 @@ export class SortedView {
 }
 
 /**
- * Tier 1 and `each` over a materialised order. Every entity is located through
- * the entity index as it is reached, so the walk is indifferent to where rows
- * move meanwhile; the trade is that `chunks` has nothing to hand out (SPEC §6.7).
+ * Tier 1 and `each` over a materialised order: a `sortBy`, or a `Cascade`
+ * keyed on hierarchy depth. Like every materialised result it has no chunks
+ * (SPEC §6.7, §7.6).
  */
-export class SortedQueryResult {
+export class SortedQueryResult implements View {
   declare readonly [$view]: SortedView
+  declare readonly [$plan]: QueryPlan
+  declare readonly [$terms]: readonly Term[]
 
-  readonly #parent: QueryResult
   readonly #base: QueryResult
-  readonly #by: Field | Comparator
-  readonly #descending: boolean
-  readonly #binding: Binding
-  readonly #filter: RowFilter | null
-  readonly #entities: EntityIndex
-  readonly #archetypes: readonly Archetype[]
-  readonly #ticks: Ticks
-  readonly #iteration: Iteration
+  readonly #walk: ListWalk
+  readonly #forget: () => void
 
   /**
-   * `parent` owns the memo entry; `base` owns the archetype list — the parent
-   * narrowed to entities that carry the key trait, or the parent itself.
+   * `base` owns the archetype list — the query narrowed to entities that carry
+   * the key trait, or the query itself; `terms` are the query's own, which
+   * decide what `each` hands out. `forget` drops the memo entry on dispose.
    */
   public constructor(
-    parent: QueryResult,
     base: QueryResult,
-    by: Field | Comparator,
+    terms: readonly Term[],
+    key: SortKey,
     descending: boolean,
     cache: QueryCache,
+    forget: () => void,
   ) {
-    const compare = typeof by === 'function' ? by : null
-    this[$view] = new SortedView(
-      base[$archetypes],
-      compare === null ? (by as Field) : null,
-      descending,
-      compare,
-      cache.ticks,
-    )
-    this.#parent = parent
+    this[$view] = new SortedView(base[$archetypes], key, descending, cache.ticks)
+    this[$plan] = base[$plan]
+    this[$terms] = terms
     this.#base = base
-    this.#by = by
-    this.#descending = descending
-    this.#binding = new Binding(parent[$terms])
-    this.#filter = RowFilter.of(parent[$terms])
-    this.#entities = cache.entities
-    this.#archetypes = cache.graph.list
-    this.#ticks = cache.ticks
-    this.#iteration = cache.iteration
+    this.#walk = new ListWalk(terms, null, cache)
+    this.#forget = forget
     base.attach(this)
   }
 
@@ -266,7 +268,7 @@ export class SortedQueryResult {
 
   public [Symbol.iterator](): Iterator<Entity> {
     const view = this[$view]
-    return new SortedIterator(view.ensure(), view.length, this.#entities)
+    return this.#walk.iterator(view.ensure(), view.length, 1)
   }
 
   /** An ordered copy, safe to drive structural change with (SPEC §9). */
@@ -284,108 +286,27 @@ export class SortedQueryResult {
   public each(fn: (...args: any[]) => void): void {
     const view = this[$view]
     const entities = view.ensure()
-    const iteration = this.#iteration
-    const frame = iteration.enter()
-    // A materialised walk has no unvisited row a swap-remove could disturb (SPEC §9).
-    if (__DEV__) frame.archetype = null
     view.walks++
     try {
-      this.#walk(fn, entities, view.length)
+      this.#walk.each(fn, entities, view.length, 1)
     } finally {
       view.walks--
-      if (__DEV__) this.#binding.poison()
-      iteration.exit()
     }
   }
 
   public dispose(): void {
     this[$view].unwatch()
     this.#base.detach(this)
-    this.#parent.forget(this.#by, this.#descending)
+    this.#forget()
+  }
+
+  /** @internal */
+  public admit(archetype: Archetype): void {
+    this[$view].watch(archetype)
   }
 
   /** @internal */
   public retrack(trait: Trait): void {
-    this.#binding.retrack(trait)
-  }
-
-  #walk(fn: (...args: any[]) => void, entities: Float64Array, n: number): void {
-    const filter = this.#filter
-    const ticks = this.#ticks
-    if (filter !== null && !filter.begin(ticks)) return
-    const tick = ticks.tick
-
-    const index = this.#entities
-    const { generations, archetypes: archetypeIds, rows } = index
-    const archetypes = this.#archetypes
-    const binding = this.#binding
-    const { args, cursors, cursorColumns, boxedArg, boxedColumn, boxedPage } = binding
-    const arity = args.length - 1
-
-    let bound: Archetype | null = null
-    let bindable = false
-    let boundPage = -1
-    let pageShift = 0
-    let pageMask = 0
-
-    for (let k = 0; k < n; k++) {
-      const entity = entities[k] as Entity
-      const id = entityId(entity)
-      if (generations[id] !== entityGeneration(entity)) continue
-      const archetype = archetypes[archetypeIds[id]]
-      if (archetype !== bound) {
-        bound = archetype
-        boundPage = -1
-        pageShift = archetype.pageShift
-        pageMask = archetype.pageMask
-        bindable = binding.bind(archetype)
-        if (bindable && filter !== null) filter.bind(archetype)
-      }
-      if (!bindable) continue
-
-      const row = rows[id]
-      const page = row >>> pageShift
-      const i = row & pageMask
-      if (page !== boundPage) {
-        boundPage = page
-        for (let c = 0; c < cursors.length; c++) cursors[c][$bind](cursorColumns[c], page, tick)
-        for (let b = 0; b < boxedArg.length; b++)
-          boxedPage[b] = boxedColumn[b].pages[page] as unknown[]
-      }
-      if (filter !== null && !filter.accept(entity, page, i)) continue
-      for (let c = 0; c < cursors.length; c++) cursors[c][$row] = i
-      for (let b = 0; b < boxedArg.length; b++) args[boxedArg[b]] = boxedPage[b][i]
-      invoke(fn, args, arity, entity)
-    }
-  }
-}
-
-/** Tier 1 over the materialised order; entities that died since it was built are skipped. */
-class SortedIterator implements Iterator<Entity> {
-  readonly #entities: Float64Array
-  readonly #length: number
-  readonly #index: EntityIndex
-  readonly #result: IteratorResult<Entity> = { done: false, value: 0 as Entity }
-  #at = 0
-
-  public constructor(entities: Float64Array, length: number, index: EntityIndex) {
-    this.#entities = entities
-    this.#length = length
-    this.#index = index
-  }
-
-  public next(): IteratorResult<Entity> {
-    const result = this.#result
-    const generations = this.#index.generations
-    while (this.#at < this.#length) {
-      const entity = this.#entities[this.#at++] as Entity
-      if (generations[entityId(entity)] === entityGeneration(entity)) {
-        result.value = entity
-        return result
-      }
-    }
-    result.done = true
-    result.value = undefined as unknown as Entity
-    return result
+    this.#walk.retrack(trait)
   }
 }

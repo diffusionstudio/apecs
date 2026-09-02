@@ -1,9 +1,10 @@
 import { Column } from './column'
 import { NULL_ENTITY, type Entity } from './entity'
 import { createMask, maskKey, maskWith, maskWithout, type Mask } from './mask'
+import { isRelation, pairsOf } from './relation'
 import type { Field } from './schema'
 import type { SortedView } from './sorted'
-import { $fields, $id, $index, $trait } from './symbols'
+import { $fields, $id, $index, $options, $targetField, $trait } from './symbols'
 import { setTracked, type Trait } from './trait'
 import type { TraitRegistry } from './registry'
 
@@ -56,19 +57,30 @@ export class Archetype {
     return columns === undefined ? undefined : columns[field[$index]]
   }
 
-  /** Tags allocate nothing; every other trait contributes one column per field. */
-  public addColumns(trait: Trait): void {
+  /**
+   * Tags allocate nothing; every other trait contributes one column per field.
+   * An exclusive relation adds its target column after the data; a
+   * non-exclusive one adds nothing, its pairs carry the data (SPEC §7.4).
+   */
+  public addColumns(trait: Trait): Column[] | null {
     const fields = trait[$fields]
-    if (fields.length === 0) return
-    const columns: Column[] = new Array(fields.length)
-    for (let i = 0; i < fields.length; i++) {
-      const column = new Column(fields[i], this.pageSize)
+    let target: Field | null = null
+    if (isRelation(trait)) {
+      if (!trait[$options].exclusive) return null
+      target = trait[$targetField]
+    }
+    const width = target === null ? fields.length : fields.length + 1
+    if (width === 0) return null
+    const columns: Column[] = new Array(width)
+    for (let i = 0; i < width; i++) {
+      const column = new Column(i < fields.length ? fields[i] : target!, this.pageSize)
       columns[i] = column
       this.columns.push(column)
     }
     this.columnsOf.set(trait[$id], columns)
     this.traitIds.push(trait[$id])
     this.traitColumns.push(columns)
+    return columns
   }
 
   public appendRow(entity: Entity): number {
@@ -150,6 +162,8 @@ export class ArchetypeGraph {
 
   /** Set by the query cache; every new archetype is offered to the live queries once. */
   public onCreate: ((archetype: Archetype) => void) | null = null
+  /** Every `eid` column of the world, patched when the entity it names dies (SPEC §8.5). */
+  readonly refs: Column[] = []
 
   private readonly byKey = new Map<string, Archetype>()
 
@@ -167,17 +181,16 @@ export class ArchetypeGraph {
    */
   public track(trait: Trait): void {
     setTracked(trait)
-    const list = this.list
-    for (let i = 0; i < list.length; i++) {
-      const columns = list[i].columnsOf.get(trait[$id])
-      if (columns === undefined) continue
-      for (let c = 0; c < columns.length; c++) columns[c].track()
-    }
+    if (isRelation(trait) && !trait[$options].exclusive) {
+      const pairs = pairsOf(trait)
+      if (pairs !== undefined) for (const pair of pairs) this.trackColumns(pair[$id])
+    } else this.trackColumns(trait[$id])
   }
 
   /** Drops every archetype so its columns can be collected; the graph is not reusable. */
   public dispose(): void {
     this.list.length = 0
+    this.refs.length = 0
     this.byKey.clear()
     this.onCreate = null
   }
@@ -202,6 +215,15 @@ export class ArchetypeGraph {
     return to
   }
 
+  private trackColumns(traitId: number): void {
+    const list = this.list
+    for (let i = 0; i < list.length; i++) {
+      const columns = list[i].columnsOf.get(traitId)
+      if (columns === undefined) continue
+      for (let c = 0; c < columns.length; c++) columns[c].track()
+    }
+  }
+
   private intern(mask: Mask): Archetype {
     return this.byKey.get(maskKey(mask)) ?? this.create(mask)
   }
@@ -212,8 +234,13 @@ export class ArchetypeGraph {
       let bits = mask[block]
       while (bits !== 0) {
         const lowest = bits & -bits
-        archetype.addColumns(this.traits.list[(block << 5) + (31 - Math.clz32(lowest))])
         bits ^= lowest
+        const trait = this.traits.list[(block << 5) + (31 - Math.clz32(lowest))]
+        const columns = archetype.addColumns(trait)
+        if (columns === null) continue
+        const fields = trait[$fields]
+        for (let i = 0; i < fields.length; i++)
+          if (fields[i].kind === 'eid') this.refs.push(columns[i])
       }
     }
     this.list.push(archetype)
