@@ -1,7 +1,8 @@
-import type { Archetype } from './archetype'
+import { snapshotRows, type Archetype } from './archetype'
 import type { Column, ColumnPage } from './column'
 import { assert, warnOnce } from './debug'
 import type { Entity } from './entity'
+import type { Frame, Iteration } from './iteration'
 import type { Field, Plan } from './schema'
 import { $id, $index, $kind, $options, $plan, $trait } from './symbols'
 import type { Ticks } from './ticks'
@@ -51,6 +52,9 @@ const EMPTY = new Float64Array(0)
 /**
  * One page of one archetype. Reused across steps: the views it hands out are
  * valid for the current step only (SPEC §6.6).
+ *
+ * Walk the page back to front when mutating the entities in it: a swap-remove
+ * then only ever pulls a row already visited into the hole (SPEC §9).
  */
 export class Chunk {
   public length = 0
@@ -139,22 +143,31 @@ export class Chunk {
 
 /**
  * The chunk walk: one reusable iterator, no generator, no allocation per step
- * (SPEC §12.2). Archetypes and pages run back to front, matching `each`.
+ * (SPEC §12.2). Archetypes and pages run back to front, matching `each`, and
+ * the row counts are fixed at the start so nothing appended mid-walk is reached.
  */
 export class Chunks implements Iterable<Chunk> {
   readonly #archetypes: readonly Archetype[]
   readonly #chunk: Chunk
+  readonly #iteration: Iteration
   readonly #result: IteratorResult<Chunk> = { done: true, value: undefined as unknown as Chunk }
 
-  #archetype = -1
+  #caps: Uint32Array = new Uint32Array(0)
+  #frame: Frame | null = null
+  #archetype = 0
   #page = -1
 
-  public constructor(archetypes: readonly Archetype[], ticks: Ticks) {
+  public constructor(archetypes: readonly Archetype[], ticks: Ticks, iteration: Iteration) {
     this.#archetypes = archetypes
     this.#chunk = new Chunk(ticks)
+    this.#iteration = iteration
   }
 
   public [Symbol.iterator](): IterableIterator<Chunk> {
+    // A walk abandoned before it drained is closed here rather than leaking its depth.
+    if (this.#frame !== null) this.#close()
+    this.#frame = this.#iteration.enter()
+    this.#caps = snapshotRows(this.#archetypes, this.#caps)
     this.#archetype = this.#archetypes.length
     this.#page = -1
     return this
@@ -169,25 +182,47 @@ export class Chunks implements Iterable<Chunk> {
     for (;;) {
       if (this.#page < 0) {
         let index = this.#archetype - 1
-        while (index >= 0 && archetypes[index].rows === 0) index--
+        while (index >= 0 && this.#rowsOf(index) === 0) index--
+        if (index < 0) return this.return()
         this.#archetype = index
-        if (index < 0) {
-          result.done = true
-          result.value = undefined as unknown as Chunk
-          return result
-        }
-        this.#page = (archetypes[index].rows - 1) >>> archetypes[index].pageShift
+        this.#page = (this.#rowsOf(index) - 1) >>> archetypes[index].pageShift
       }
 
       const archetype = archetypes[this.#archetype]
       const page = this.#page--
-      const rows = archetype.rows - (page << archetype.pageShift)
+      const start = page << archetype.pageShift
+      const rows = this.#rowsOf(this.#archetype) - start
       if (rows <= 0) continue
 
+      if (__DEV__) {
+        this.#frame!.archetype = archetype
+        this.#frame!.row = start
+      }
       this.#chunk.move(archetype, page, rows < archetype.pageSize ? rows : archetype.pageSize)
       result.done = false
       result.value = this.#chunk
       return result
     }
+  }
+
+  /** `break` and `throw` land here; the walk closes exactly as a drained one does. */
+  public return(): IteratorResult<Chunk> {
+    if (this.#frame !== null) this.#close()
+    const result = this.#result
+    result.done = true
+    result.value = undefined as unknown as Chunk
+    return result
+  }
+
+  #rowsOf(index: number): number {
+    return Math.min(this.#archetypes[index].rows, this.#caps[index])
+  }
+
+  #close(): void {
+    this.#frame = null
+    this.#archetype = 0
+    this.#page = -1
+    if (__DEV__) this.#chunk.flushGuards()
+    this.#iteration.exit()
   }
 }

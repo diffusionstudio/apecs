@@ -146,7 +146,7 @@ Stage gate: **2-B complete.**
 
 Stage gate: **3-B complete.**
 
-### 4-A — Tests
+### 4-A [COMPLETED] — Tests
 
 | ID | Test task |
 | --- | --- |
@@ -155,7 +155,7 @@ Stage gate: **3-B complete.**
 | **T4.3** | Dev structural-version assertion fires on unsafe mutation and is absent in prod (§9) |
 | **T4.4** | `clear` keeps archetypes warm, `compact` releases empty tail pages, `destroy` fires `onRemove`, unsubscribes, releases the world id, and throws on later use in dev (§5.5, §10.2) |
 
-### 4-B — Implementation
+### 4-B [COMPLETED] — Implementation
 
 | ID | Impl task | → |
 | --- | --- | --- |

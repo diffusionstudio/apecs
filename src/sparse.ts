@@ -70,6 +70,12 @@ export class SparseStore {
     return true
   }
 
+  public compact(): void {
+    const columns = this.columns
+    for (let i = 0; i < columns.length; i++) columns[i].compact(this.size)
+    this.capacity = Math.ceil(this.size / this.pageSize) * this.pageSize
+  }
+
   private reserve(id: number, rows: number): void {
     if (id >= this.slots.length) {
       const slots = new Int32Array(nextPowerOfTwo(id + 1)).fill(NO_SLOT)

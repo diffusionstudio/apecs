@@ -97,6 +97,15 @@ export class Archetype {
     return moved
   }
 
+  /** Releases the tail pages no live row reaches (SPEC §10.2). */
+  public compact(): void {
+    const pages = Math.ceil(this.rows / this.pageSize)
+    this.entities.length = pages
+    this.capacity = pages * this.pageSize
+    const columns = this.columns
+    for (let i = 0; i < columns.length; i++) columns[i].compact(this.rows)
+  }
+
   private reserve(rows: number): void {
     while (this.capacity < rows) {
       this.entities.push(new Float64Array(this.pageSize))
@@ -105,6 +114,18 @@ export class Archetype {
     const columns = this.columns
     for (let i = 0; i < columns.length; i++) columns[i].ensure(rows)
   }
+}
+
+/**
+ * `caps[i] = archetypes[i].rows` as of now, reusing `caps` unless the list has
+ * outgrown it. A walk bounded by these counts never reaches a row appended
+ * after it started, however the appends interleave with it (SPEC §9).
+ */
+export function snapshotRows(archetypes: readonly Archetype[], caps: Uint32Array): Uint32Array {
+  const n = archetypes.length
+  if (caps.length < n) caps = new Uint32Array(n)
+  for (let i = 0; i < n; i++) caps[i] = archetypes[i].rows
+  return caps
 }
 
 /**
@@ -140,6 +161,13 @@ export class ArchetypeGraph {
       if (columns === undefined) continue
       for (let c = 0; c < columns.length; c++) columns[c].track()
     }
+  }
+
+  /** Drops every archetype so its columns can be collected; the graph is not reusable. */
+  public dispose(): void {
+    this.list.length = 0
+    this.byKey.clear()
+    this.onCreate = null
   }
 
   public edgeAdd(from: Archetype, local: number): Archetype {

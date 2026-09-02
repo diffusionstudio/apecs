@@ -1,9 +1,10 @@
-import type { Archetype, ArchetypeGraph } from './archetype'
+import { snapshotRows, type Archetype, type ArchetypeGraph } from './archetype'
 import { Chunks } from './chunk'
 import type { Column } from './column'
 import { cursorClassFor, type Cursor } from './cursor'
 import { assert } from './debug'
 import { entityId, type Entity } from './entity'
+import type { Frame, Iteration } from './iteration'
 import { createMask, maskHas, maskIntersects, maskSuperset, maskWith, type Mask } from './mask'
 import type { TraitRegistry } from './registry'
 import {
@@ -246,8 +247,8 @@ function filtersOf(terms: readonly Term[]): Filters | null {
 
 /**
  * The three access tiers over one matching-archetype list. Every walk runs
- * archetypes and rows back to front, which is what makes mutating or despawning
- * the current entity safe (SPEC §9).
+ * archetypes and rows back to front over row counts fixed when it started,
+ * which is what makes mutating or despawning the current entity safe (SPEC §9).
  */
 export class QueryResult {
   declare readonly [$plan]: QueryPlan
@@ -258,6 +259,8 @@ export class QueryResult {
   readonly #slots: readonly Slot[]
   readonly #args: unknown[]
   readonly #ticks: Ticks
+  readonly #iteration: Iteration
+  #caps: Uint32Array = new Uint32Array(0)
 
   /**
    * The per-archetype binding, split so the row loop only walks what actually
@@ -285,12 +288,14 @@ export class QueryResult {
     plan: QueryPlan,
     terms: readonly Term[],
     ticks: Ticks,
+    iteration: Iteration,
   ) {
     this.#cache = cache
     this.#key = key
     this.#slots = slotsOf(terms)
     this.#args = new Array(this.#slots.length + 1).fill(null)
     this.#ticks = ticks
+    this.#iteration = iteration
     this.#filters = filtersOf(terms)
     this[$plan] = plan
     this[$archetypes] = []
@@ -335,16 +340,23 @@ export class QueryResult {
   }
 
   public each(fn: (...args: any[]) => void): void {
-    if (this.#filters === null) this.#eachAll(fn)
-    else this.#eachFiltered(fn)
-    if (__DEV__) {
-      const slots = this.#slots
-      for (let s = 0; s < slots.length; s++) slots[s].cursor?.[$poison]()
+    const iteration = this.#iteration
+    const frame = iteration.enter()
+    try {
+      if (this.#filters === null) this.#eachAll(fn, frame)
+      else this.#eachFiltered(fn, frame)
+    } finally {
+      if (__DEV__) {
+        const slots = this.#slots
+        for (let s = 0; s < slots.length; s++) slots[s].cursor?.[$poison]()
+      }
+      iteration.exit()
     }
   }
 
-  #eachAll(fn: (...args: any[]) => void): void {
+  #eachAll(fn: (...args: any[]) => void, frame: Frame): void {
     const archetypes = this[$archetypes]
+    const caps = (this.#caps = snapshotRows(archetypes, this.#caps))
     const args = this.#args
     const arity = args.length - 1
     const cursors = this.#cursors
@@ -356,8 +368,9 @@ export class QueryResult {
 
     for (let a = archetypes.length - 1; a >= 0; a--) {
       const archetype = archetypes[a]
-      const rows = archetype.rows
+      const rows = Math.min(archetype.rows, caps[a])
       if (rows === 0 || !this.#bind(archetype)) continue
+      if (__DEV__) frame.archetype = archetype
 
       const { pageShift, pageMask } = archetype
       const cursorCount = cursors.length
@@ -372,6 +385,7 @@ export class QueryResult {
           for (let c = 0; c < cursorCount; c++) cursors[c][$row] = i
           for (let b = 0; b < boxedCount; b++) args[boxedArg[b]] = boxedPage[b][i]
           const entity = handles[i] as Entity
+          if (__DEV__) frame.row = (page << pageShift) | i
           switch (arity) {
             case 0:
               fn(entity)
@@ -399,7 +413,7 @@ export class QueryResult {
    * The same walk with a per-row tick predicate. A separate loop so the
    * unfiltered path carries none of it (SPEC §8.3).
    */
-  #eachFiltered(fn: (...args: any[]) => void): void {
+  #eachFiltered(fn: (...args: any[]) => void, frame: Frame): void {
     const { changed, added, removed } = this.#filters!
     const ticks = this.#ticks
     const lastSeen = this.#lastSeen
@@ -418,6 +432,7 @@ export class QueryResult {
     for (let a = 0; a < added.length; a++) addedTables[a] = ticks.added.get(added[a])!
 
     const archetypes = this[$archetypes]
+    const caps = (this.#caps = snapshotRows(archetypes, this.#caps))
     const args = this.#args
     const arity = args.length - 1
     const cursors = this.#cursors
@@ -429,8 +444,9 @@ export class QueryResult {
 
     for (let a = archetypes.length - 1; a >= 0; a--) {
       const archetype = archetypes[a]
-      const rows = archetype.rows
+      const rows = Math.min(archetype.rows, caps[a])
       if (rows === 0 || !this.#bind(archetype)) continue
+      if (__DEV__) frame.archetype = archetype
       for (let t = 0; t < changed.length; t++)
         changedColumns[t] = archetype.columnsOf.get(changed[t][$id])!
 
@@ -448,6 +464,7 @@ export class QueryResult {
           if (!this.#accept(entity, page, i, lastSeen)) continue
           for (let c = 0; c < cursorCount; c++) cursors[c][$row] = i
           for (let b = 0; b < boxedCount; b++) args[boxedArg[b]] = boxedPage[b][i]
+          if (__DEV__) frame.row = (page << pageShift) | i
           switch (arity) {
             case 0:
               fn(entity)
@@ -497,7 +514,7 @@ export class QueryResult {
   }
 
   public chunks(): Chunks {
-    return (this.#chunks ??= new Chunks(this[$archetypes], this.#ticks))
+    return (this.#chunks ??= new Chunks(this[$archetypes], this.#ticks, this.#iteration))
   }
 
   public dispose(): void {
@@ -543,6 +560,7 @@ export class QueryResult {
 /** Tier 1. A plain object rather than a generator, so iteration allocates once. */
 class EntityIterator implements Iterator<Entity> {
   readonly #archetypes: readonly Archetype[]
+  readonly #caps: Uint32Array
   readonly #result: IteratorResult<Entity> = { done: false, value: 0 as Entity }
 
   #index: number
@@ -550,6 +568,7 @@ class EntityIterator implements Iterator<Entity> {
 
   public constructor(archetypes: readonly Archetype[]) {
     this.#archetypes = archetypes
+    this.#caps = snapshotRows(archetypes, new Uint32Array(archetypes.length))
     this.#index = archetypes.length
   }
 
@@ -564,7 +583,7 @@ class EntityIterator implements Iterator<Entity> {
         result.value = undefined as unknown as Entity
         return result
       }
-      this.#row = archetypes[index].rows - 1
+      this.#row = Math.min(archetypes[index].rows, this.#caps[index]) - 1
     }
 
     result.value = archetypes[this.#index].entityAt(this.#row--)
@@ -583,12 +602,19 @@ export class QueryCache {
   readonly #traits: TraitRegistry
   readonly #graph: ArchetypeGraph
   readonly #ticks: Ticks
+  readonly #iteration: Iteration
   readonly #byKey = new Map<string, QueryResult>()
 
-  public constructor(traits: TraitRegistry, graph: ArchetypeGraph, ticks: Ticks) {
+  public constructor(
+    traits: TraitRegistry,
+    graph: ArchetypeGraph,
+    ticks: Ticks,
+    iteration: Iteration,
+  ) {
     this.#traits = traits
     this.#graph = graph
     this.#ticks = ticks
+    this.#iteration = iteration
     graph.onCreate = (archetype) => this.#offer(archetype)
   }
 
@@ -607,7 +633,14 @@ export class QueryCache {
         else if (modifier[$term] === 'added') this.#ticks.trackAdded(trait[$id])
       }
 
-      query = new QueryResult(this, key, compileTerms(this.#traits, terms), terms, this.#ticks)
+      query = new QueryResult(
+        this,
+        key,
+        compileTerms(this.#traits, terms),
+        terms,
+        this.#ticks,
+        this.#iteration,
+      )
       this.#byKey.set(key, query)
       this.live.push(query)
 

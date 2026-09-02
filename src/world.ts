@@ -15,6 +15,7 @@ import {
   packEntity,
   type Entity,
 } from './entity'
+import { Iteration } from './iteration'
 import { maskHas } from './mask'
 import { QueryCache, type QueryResult } from './query'
 import { TraitRegistry } from './registry'
@@ -123,6 +124,7 @@ export class World {
   #destroyed = false
 
   readonly #ticks = new Ticks()
+  readonly #iteration = new Iteration()
   readonly #onAdd = new Map<Trait, ObserverFn[]>()
   readonly #onRemove = new Map<Trait, ObserverFn[]>()
   readonly #onChange = new Map<Trait, ObserverFn[]>()
@@ -148,7 +150,7 @@ export class World {
     this[$entities] = new EntityIndex(maxEntities)
     this[$traits] = new TraitRegistry()
     this[$archetypes] = new ArchetypeGraph(this[$traits], pageSize)
-    this[$queries] = new QueryCache(this[$traits], this[$archetypes], this.#ticks)
+    this[$queries] = new QueryCache(this[$traits], this[$archetypes], this.#ticks, this.#iteration)
 
     const entities = this[$entities]
     const root = this[$archetypes].root
@@ -162,6 +164,7 @@ export class World {
   // ---------------------------------------------------------------- lifecycle
 
   public spawn(...items: TraitLike[]): Entity {
+    if (__DEV__) this.#assertNotDestroyed()
     const entities = this[$entities]
     const id = this.#allocId()
     const entity = packEntity(id, entities.generations[id], this[$id])
@@ -189,6 +192,7 @@ export class World {
 
   /** One archetype transition for the whole batch instead of `n` (SPEC §4.3). */
   public spawnMany(n: number, ...items: TraitLike[]): Float64Array {
+    if (__DEV__) this.#assertNotDestroyed()
     const batch = new Float64Array(n > 0 ? n : 0)
     if (batch.length === 0) return batch
 
@@ -237,23 +241,17 @@ export class World {
       this.#assertAlive(entity, id)
       assert(id !== WORLD_ENTITY_ID, 'the world entity cannot be despawned')
     }
-    // `onRemove` runs while the data is still intact (SPEC §8.1); handlers may
-    // mutate, so the exiting archetype is read afterwards.
-    if (this.#onRemove.size !== 0) {
-      for (const [trait, list] of this.#onRemove) {
-        if (list.length !== 0 && this.#hasTrait(id, trait)) this.#dispatch(list, entity)
-      }
-    }
-    if (this.#boundaries.length !== 0) this.#crossed(entity, this.#archetypeOf(id), null)
-    this.#release(id)
+    this.#despawn(entity, id)
   }
 
   public despawnMany(batch: EntityBatch): void {
+    if (__DEV__) this.#assertNotDestroyed()
     const list = indexed(batch)
     for (let i = 0; i < list.length; i++) this.despawn(list[i] as Entity)
   }
 
   public isAlive(entity: Entity): boolean {
+    if (__DEV__) this.#assertNotDestroyed()
     return (
       entityWorld(entity) === this[$id] &&
       this[$entities].isAlive(entityId(entity), entityGeneration(entity))
@@ -272,6 +270,7 @@ export class World {
   }
 
   public addMany(batch: EntityBatch, ...items: TraitLike[]): void {
+    if (__DEV__) this.#assertNotDestroyed()
     const list = indexed(batch)
     for (let i = 0; i < list.length; i++) {
       const entity = list[i] as Entity
@@ -291,6 +290,7 @@ export class World {
   }
 
   public removeMany(batch: EntityBatch, ...traits: TraitLike[]): void {
+    if (__DEV__) this.#assertNotDestroyed()
     const list = indexed(batch)
     for (let i = 0; i < list.length; i++) {
       const entity = list[i] as Entity
@@ -394,33 +394,40 @@ export class World {
 
   /** The monotonic change clock (SPEC §8.3). */
   public get tick(): number {
+    if (__DEV__) this.#assertNotDestroyed()
     return this.#ticks.tick
   }
 
   /** Advances the clock one tick and expires stale removal records (SPEC §8.3). */
   public step(): void {
+    if (__DEV__) this.#assertNotDestroyed()
     this.#ticks.step()
   }
 
   public onAdd(trait: Trait, fn: ObserverFn): () => void {
+    if (__DEV__) this.#assertNotDestroyed()
     return subscribe(this.#onAdd, trait, fn)
   }
 
   public onRemove(trait: Trait, fn: ObserverFn): () => void {
+    if (__DEV__) this.#assertNotDestroyed()
     return subscribe(this.#onRemove, trait, fn)
   }
 
   /** Subscribing is what promotes the trait to tracked (SPEC §8.3). */
   public onChange(trait: Trait, fn: ObserverFn): () => void {
+    if (__DEV__) this.#assertNotDestroyed()
     this[$archetypes].track(trait)
     return subscribe(this.#onChange, trait, fn)
   }
 
   public onEnter(query: QueryResult, fn: ObserverFn): () => void {
+    if (__DEV__) this.#assertNotDestroyed()
     return append(this.#boundary(query).enter, fn)
   }
 
   public onExit(query: QueryResult, fn: ObserverFn): () => void {
+    if (__DEV__) this.#assertNotDestroyed()
     return append(this.#boundary(query).exit, fn)
   }
 
@@ -428,30 +435,66 @@ export class World {
 
   /** O(1) after the first call: the term list is hashed to a cached result (SPEC §6.2). */
   public query(...terms: Term[]): QueryResult {
+    if (__DEV__) this.#assertNotDestroyed()
     return this[$queries].get(terms)
   }
 
   /** The explicit hoist. Identical to what `query` hands out (SPEC §6.2). */
   public createQuery(...terms: Term[]): QueryResult {
+    if (__DEV__) this.#assertNotDestroyed()
     return this[$queries].get(terms)
   }
 
   public queryFirst(...terms: Term[]): Entity | undefined {
+    if (__DEV__) this.#assertNotDestroyed()
     return this[$queries].get(terms).first
+  }
+
+  // ----------------------------------------------------------------- deferral
+
+  /** Queues work for `flush`, which the outermost `each` / `chunks` exit runs (SPEC §9). */
+  public defer(fn: () => void): void {
+    if (__DEV__) this.#assertNotDestroyed()
+    this.#iteration.defer(fn)
+  }
+
+  public flush(): void {
+    if (__DEV__) this.#assertNotDestroyed()
+    this.#iteration.flush()
   }
 
   // -------------------------------------------------------------------- world
 
+  /** Despawns every entity but the world's own; archetypes and pages stay allocated (SPEC §5.5). */
+  public clear(): void {
+    if (__DEV__) this.#assertNotDestroyed()
+    this.#clear()
+  }
+
+  /** Releases the empty tail pages that despawns leave behind (SPEC §10.2). */
+  public compact(): void {
+    if (__DEV__) this.#assertNotDestroyed()
+    const archetypes = this[$archetypes].list
+    for (let i = 0; i < archetypes.length; i++) archetypes[i].compact()
+    const stores = this.#storeList
+    for (let i = 0; i < stores.length; i++) stores[i].compact()
+  }
+
   public destroy(): void {
     if (this.#destroyed) return
+    this.#clear()
+    // The world entity goes down with the world; its traits get their `onRemove` too.
+    if (this.#onRemove.size !== 0) this.#removing(this.entity, WORLD_ENTITY_ID)
     this.#destroyed = true
     this[$queries].clear()
+    this[$archetypes].dispose()
     this.#stores.clear()
     this.#storeList.length = 0
     this.#onAdd.clear()
     this.#onRemove.clear()
     this.#onChange.clear()
     this.#boundaries.length = 0
+    this.#iteration.clear()
     freeWorldIds.push(this[$id])
   }
 
@@ -459,6 +502,30 @@ export class World {
 
   #archetypeOf(id: number): Archetype {
     return this[$archetypes].list[this[$entities].archetypes[id]]
+  }
+
+  #despawn(entity: Entity, id: number): void {
+    if (this.#onRemove.size !== 0) this.#removing(entity, id)
+    if (this.#boundaries.length !== 0) this.#crossed(entity, this.#archetypeOf(id), null)
+    this.#release(id)
+  }
+
+  /**
+   * Highest id first, so most removals take the archetype tail and swap nothing.
+   * The index is re-read per id: an `onRemove` handler may spawn and grow it.
+   */
+  #clear(): void {
+    for (let id = this.#nextId - 1; id >= FIRST_ENTITY_ID; id--) {
+      const generation = this[$entities].generations[id]
+      if (generation !== 0) this.#despawn(packEntity(id, generation, this[$id]), id)
+    }
+  }
+
+  /** `onRemove` for every trait the entity holds, while its data is still intact (SPEC §8.1). */
+  #removing(entity: Entity, id: number): void {
+    for (const [trait, list] of this.#onRemove) {
+      if (list.length !== 0 && this.#hasTrait(id, trait)) this.#dispatch(list, entity)
+    }
   }
 
   #hasTrait(id: number, trait: Trait): boolean {
@@ -636,6 +703,7 @@ export class World {
   #move(id: number, entity: Entity, from: Archetype, to: Archetype): number {
     const entities = this[$entities]
     const source = entities.rows[id]
+    if (__DEV__) this.#iteration.assertRemovable(from, source)
     const destination = to.appendRow(entity)
 
     const traitIds = from.traitIds
@@ -660,7 +728,9 @@ export class World {
   #release(id: number): void {
     const entities = this[$entities]
     const row = entities.rows[id]
-    const moved = this.#archetypeOf(id).removeRow(row)
+    const archetype = this.#archetypeOf(id)
+    if (__DEV__) this.#iteration.assertRemovable(archetype, row)
+    const moved = archetype.removeRow(row)
     if (moved !== NULL_ENTITY) entities.rows[entityId(moved)] = row
 
     const stores = this.#storeList
@@ -717,7 +787,12 @@ export class World {
     this.#freeCount++
   }
 
+  #assertNotDestroyed(): void {
+    assert(!this.#destroyed, 'this world has been destroyed')
+  }
+
   #assertAlive(entity: Entity, id: number): void {
+    this.#assertNotDestroyed()
     assert(
       entityWorld(entity) === this[$id],
       `entity ${entity} belongs to world ${entityWorld(entity)}, not ${this[$id]}`,
