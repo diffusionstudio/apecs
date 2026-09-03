@@ -14,6 +14,7 @@ import {
   $trait,
   $value,
 } from './symbols'
+import type { Init, TraitFields } from './types'
 
 export interface TraitOptions {
   /** `'table'` keeps columns inside the archetype; `'sparse'` keeps them outside it (SPEC §3.5). */
@@ -23,41 +24,33 @@ export interface TraitOptions {
 }
 
 /** A trait paired with an initial value, and — for relations — a target (SPEC §3.4, §7.2). */
-export interface TraitInstance {
-  readonly [$trait]: Trait
+export interface TraitInstance<S extends Schema = any> {
+  readonly [$trait]: Trait<S>
   readonly [$target]: Entity | '*'
   readonly [$value]: unknown
 }
 
-// The call signature stays loose until the public type surface lands in stage 7 (SPEC §11).
-export interface Trait {
-  (...args: any[]): TraitInstance
+/**
+ * The declaration slots every trait carries. `S` is the schema as it was
+ * written, which is what the mappings of SPEC §11 read; the fields it declares
+ * come from `TraitFields`, so `Position.x` is a `Field<number>` and
+ * `Position.z` does not exist.
+ */
+export interface TraitBase<S extends Schema = any> {
+  (value?: Init<S>): TraitInstance<S>
   readonly [$id]: number
   readonly [$kind]: SchemaKind
   readonly [$fields]: readonly Field[]
-  readonly [$schema]: Schema
+  readonly [$schema]: S
   readonly [$options]: Readonly<Required<TraitOptions>>
   /** Nested key tree over the flattened fields, for `get` / `set` (SPEC §4.4). */
   readonly [$plan]: Plan
-  /**
-   * Fields, and nothing else, are the string-keyed properties (SPEC §3.3). The
-   * `Function` members are redeclared because a trait's prototype is swapped away
-   * from `Function.prototype`, so a field may legally be named `call` or `name`.
-   */
-  readonly length: Field
-  readonly name: Field
-  readonly prototype: Field
-  readonly apply: Field
-  readonly call: Field
-  readonly bind: Field
-  readonly toString: Field
-  readonly arguments: Field
-  readonly caller: Field
-  readonly [key: string]: Field
 }
 
+export type Trait<S extends Schema = any> = TraitBase<S> & TraitFields<S>
+
 export interface TraitConstructor extends Function {
-  new (schema?: Schema, options?: TraitOptions): Trait
+  new <S extends Schema = undefined>(schema?: S, options?: TraitOptions): Trait<S>
   readonly prototype: Trait
 }
 

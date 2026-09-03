@@ -11,6 +11,7 @@ import { TargetIndex } from './targets'
 import type { Term } from './terms'
 import type { Ticks } from './ticks'
 import type { Trait } from './trait'
+import type { EachFn } from './types'
 
 export type Comparator = (a: Entity, b: Entity) => number
 export type DirtyLevel = 'clean' | 'resort' | 'rebuild'
@@ -206,7 +207,7 @@ export class SortedView {
  * keyed on hierarchy depth. Like every materialised result it has no chunks
  * (SPEC §6.7, §7.6).
  */
-export class SortedQueryResult implements View {
+export class SortedQueryResult<T extends readonly Term[] = readonly Term[]> implements View {
   declare readonly [$view]: SortedView
   declare readonly [$plan]: QueryPlan
   declare readonly [$terms]: readonly Term[]
@@ -277,13 +278,18 @@ export class SortedQueryResult implements View {
     return view.ensure().slice(0, view.length)
   }
 
-  public chunks(): never {
+  /**
+   * Materialised results have no chunks (SPEC §6.7). It is not public, so the
+   * type surface does not offer it, and it still throws for callers with no
+   * types to stop them.
+   */
+  protected chunks(): never {
     throw new ApecsError(
       'a sorted query is materialised and has no chunks — use each() (SPEC §6.7)',
     )
   }
 
-  public each(fn: (...args: any[]) => void): void {
+  public each(fn: EachFn<T>): void {
     const view = this[$view]
     const entities = view.ensure()
     view.walks++

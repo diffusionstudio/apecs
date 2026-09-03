@@ -10,6 +10,7 @@ import type { Ticks } from './ticks'
 import type { Term } from './terms'
 import type { Trait } from './trait'
 import { Binding, RowFilter, invoke } from './walk'
+import type { EachFn } from './types'
 
 /** A result layered over a `QueryResult`'s archetype list, told what it learns. */
 export interface View {
@@ -198,7 +199,7 @@ class ListIterator implements Iterator<Entity> {
  * that target, narrowed by whatever else the query asks. The list is the
  * index's own, so it is walked back to front and never copied (SPEC §7.4).
  */
-export class IndexedQueryResult implements View {
+export class IndexedQueryResult<T extends readonly Term[] = readonly Term[]> implements View {
   declare readonly [$plan]: QueryPlan
   declare readonly [$terms]: readonly Term[]
 
@@ -244,11 +245,12 @@ export class IndexedQueryResult implements View {
     return this.#walk.collect(this.#list.items, this.#list.length, -1)
   }
 
-  public each(fn: (...args: any[]) => void): void {
+  public each(fn: EachFn<T>): void {
     this.#walk.each(fn, this.#list.items, this.#list.length, -1)
   }
 
-  public chunks(): never {
+  /** As with every materialised result, `chunks` exists only to say no (SPEC §7.4). */
+  protected chunks(): never {
     throw new ApecsError(
       'a target query is served by the target index and has no chunks — use each() (SPEC §7.4)',
     )

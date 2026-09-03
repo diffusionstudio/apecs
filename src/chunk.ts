@@ -1,11 +1,12 @@
 import { snapshotRows, type Archetype } from './archetype'
-import type { Column, ColumnPage } from './column'
+import type { Column } from './column'
 import { assert, warnOnce } from './debug'
 import type { Entity } from './entity'
 import type { Frame, Iteration } from './iteration'
-import type { Field, Plan } from './schema'
+import type { Field, FieldKind, Plan, Schema } from './schema'
 import { $id, $index, $kind, $options, $plan, $trait } from './symbols'
 import type { Ticks } from './ticks'
+import type { ArrayFor, Store } from './types'
 import { traitOf, type TraitLike } from './value'
 
 /**
@@ -76,6 +77,7 @@ export class Chunk {
     return this.entities[i] as Entity
   }
 
+  public get<S extends Schema>(item: TraitLike<S>): Store<S>
   public get(item: TraitLike): any {
     const trait = traitOf(item)
     const columns = this.archetype.columnsOf.get(trait[$id])
@@ -128,10 +130,10 @@ export class Chunk {
     guards.clear()
   }
 
-  public column(field: Field): ColumnPage {
+  public column<K extends FieldKind>(field: Field<unknown, K>): ArrayFor<K> {
     const columns = this.archetype.columnsOf.get(field[$trait][$id])
     if (__DEV__) assert(columns !== undefined, 'this chunk does not hold that field')
-    return columns![field[$index]].pages[this.page]
+    return columns![field[$index]].pages[this.page] as ArrayFor<K>
   }
 
   /** @internal */

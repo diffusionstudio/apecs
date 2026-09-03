@@ -7,15 +7,18 @@ import type { TraitInstance } from './trait'
 export type TermKind =
   'not' | 'or' | 'with' | 'optional' | 'added' | 'removed' | 'changed' | 'cascade'
 
-export interface Modifier<K extends TermKind = TermKind> {
+export interface Modifier<K extends TermKind = TermKind, Ops extends readonly Term[] = Term[]> {
   readonly [$term]: K
-  readonly [$terms]: readonly any[]
+  readonly [$terms]: Ops
 }
 
 /** A bare trait, a relation pair, or a modifier wrapping either (SPEC §6.1). */
 export type Term = Trait | TraitInstance | Modifier
 
-function term<K extends TermKind>(kind: K, operands: readonly Term[]): Modifier<K> {
+function term<K extends TermKind, Ops extends readonly Term[]>(
+  kind: K,
+  operands: Ops,
+): Modifier<K, Ops> {
   return { [$term]: kind, [$terms]: operands }
 }
 
@@ -31,48 +34,48 @@ function requireTrait(name: string, operand: unknown): void {
   assert(isTraitTerm(operand), `${name}() takes a trait, not a nested term`)
 }
 
-export function Not(operand: Term): Modifier<'not'> {
-  return term('not', [operand])
+export function Not<T extends Term>(operand: T): Modifier<'not', [T]> {
+  return term('not', [operand] as [T])
 }
 
-export function Or(...operands: Term[]): Modifier<'or'> {
+export function Or<T extends Term[]>(...operands: T): Modifier<'or', T> {
   if (__DEV__) assert(operands.length > 0, 'Or() needs at least one term')
   return term('or', operands)
 }
 
-export function With(trait: Term): Modifier<'with'> {
+export function With<T extends Term>(trait: T): Modifier<'with', [T]> {
   if (__DEV__) requireTrait('With', trait)
-  return term('with', [trait])
+  return term('with', [trait] as [T])
 }
 
-export function Optional(trait: Term): Modifier<'optional'> {
+export function Optional<T extends Term>(trait: T): Modifier<'optional', [T]> {
   if (__DEV__) requireTrait('Optional', trait)
-  return term('optional', [trait])
+  return term('optional', [trait] as [T])
 }
 
-export function Added(trait: Term): Modifier<'added'> {
+export function Added<T extends Term>(trait: T): Modifier<'added', [T]> {
   if (__DEV__) requireTrait('Added', trait)
-  return term('added', [trait])
+  return term('added', [trait] as [T])
 }
 
-export function Removed(trait: Term): Modifier<'removed'> {
+export function Removed<T extends Term>(trait: T): Modifier<'removed', [T]> {
   if (__DEV__) requireTrait('Removed', trait)
-  return term('removed', [trait])
+  return term('removed', [trait] as [T])
 }
 
-export function Changed(trait: Term): Modifier<'changed'> {
+export function Changed<T extends Term>(trait: T): Modifier<'changed', [T]> {
   if (__DEV__) requireTrait('Changed', trait)
-  return term('changed', [trait])
+  return term('changed', [trait] as [T])
 }
 
-export function Cascade(relation: Term): Modifier<'cascade'> {
+export function Cascade<T extends Term>(relation: T): Modifier<'cascade', [T]> {
   if (__DEV__) {
     assert(
       relation instanceof Relation && relation[$options].exclusive,
       'Cascade() takes an exclusive relation',
     )
   }
-  return term('cascade', [relation])
+  return term('cascade', [relation] as [T])
 }
 
 /**

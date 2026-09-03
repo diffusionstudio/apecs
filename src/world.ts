@@ -30,7 +30,7 @@ import {
   type Pair,
   type Relation,
 } from './relation'
-import type { Field } from './schema'
+import type { Field, Schema } from './schema'
 import { SparseStore } from './sparse'
 import {
   $archetypes,
@@ -50,6 +50,7 @@ import {
 } from './symbols'
 import { Relations } from './targets'
 import type { Term } from './terms'
+import type { Init, Value } from './types'
 import { Ticks } from './ticks'
 import type { Trait, TraitInstance } from './trait'
 import {
@@ -100,7 +101,7 @@ function indexed(batch: EntityBatch): ArrayLike<number> {
 export type ObserverFn = (entity: Entity, target?: Entity) => void
 
 interface Boundary {
-  readonly query: QueryResult
+  readonly query: QueryResult<any>
   readonly enter: ObserverFn[]
   readonly exit: ObserverFn[]
 }
@@ -379,6 +380,10 @@ export class World {
 
   // --------------------------------------------------------------------- data
 
+  public get<S extends Schema>(entity: Entity, trait: TraitLike<S>, out?: Value<S>): Value<S>
+  public get<V>(entity: Entity, field: Field<V>): V
+  public get<S extends Schema>(trait: TraitLike<S>, out?: Value<S>): Value<S>
+  public get<V>(field: Field<V>): V
   public get(target: Entity | Subject, spec?: Subject | object, out?: object): any {
     const world = typeof target !== 'number'
     const entity = world ? this.entity : (target as Entity)
@@ -401,6 +406,10 @@ export class World {
     return readStruct(trait[$plan], columns!, row, into ?? {})
   }
 
+  public set<S extends Schema>(entity: Entity, trait: TraitLike<S>, value: Init<S>): void
+  public set<V>(entity: Entity, field: Field<V>, value: V): void
+  public set<S extends Schema>(trait: TraitLike<S>, value: Init<S>): void
+  public set<V>(field: Field<V>, value: V): void
   public set(target: Entity | Subject, spec?: Subject | unknown, value?: unknown): void {
     const world = typeof target !== 'number'
     const entity = world ? this.entity : (target as Entity)
@@ -509,12 +518,12 @@ export class World {
     return subscribe(this.#onChange, trait, fn)
   }
 
-  public onEnter(query: QueryResult, fn: ObserverFn): () => void {
+  public onEnter(query: QueryResult<any>, fn: ObserverFn): () => void {
     if (__DEV__) this.#assertNotDestroyed()
     return append(this.#boundary(query).enter, fn)
   }
 
-  public onExit(query: QueryResult, fn: ObserverFn): () => void {
+  public onExit(query: QueryResult<any>, fn: ObserverFn): () => void {
     if (__DEV__) this.#assertNotDestroyed()
     return append(this.#boundary(query).exit, fn)
   }
@@ -522,15 +531,15 @@ export class World {
   // ------------------------------------------------------------------ queries
 
   /** O(1) after the first call: the term list is hashed to a cached result (SPEC §6.2). */
-  public query(...terms: Term[]): QueryResult {
+  public query<const T extends readonly Term[]>(...terms: T): QueryResult<T> {
     if (__DEV__) this.#assertNotDestroyed()
-    return this[$queries].get(terms)
+    return this[$queries].get(terms) as QueryResult<T>
   }
 
   /** The explicit hoist. Identical to what `query` hands out (SPEC §6.2). */
-  public createQuery(...terms: Term[]): QueryResult {
+  public createQuery<const T extends readonly Term[]>(...terms: T): QueryResult<T> {
     if (__DEV__) this.#assertNotDestroyed()
-    return this[$queries].get(terms)
+    return this[$queries].get(terms) as QueryResult<T>
   }
 
   public queryFirst(...terms: Term[]): Entity | undefined {

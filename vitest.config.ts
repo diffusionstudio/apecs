@@ -7,12 +7,12 @@ export default defineConfig({
     projects: [
       {
         // Source with dev assertions enabled; also the project that runs the
-        // benchmarks and the heap-delta allocation checks (SPEC §12.2).
+        // heap-delta allocation checks (SPEC §12.2).
         define: { __DEV__: 'true' },
         test: {
           name: 'dev',
           include,
-          benchmark: { include: ['bench/**/*.bench.ts'] },
+          benchmark: { include: [] },
           // `globalThis.gc` for the heap-delta assertions — workers do not
           // inherit the parent process's V8 flags, so pass it through here.
           pool: 'forks',
@@ -26,6 +26,16 @@ export default defineConfig({
           name: 'prod',
           include,
           benchmark: { include: [] },
+        },
+      },
+      {
+        // The benchmarks measure what ships, so they run with the assertions
+        // compiled out, like the published bundle (SPEC §12.1).
+        define: { __DEV__: 'false' },
+        test: {
+          name: 'bench',
+          include: [],
+          benchmark: { include: ['bench/**/*.bench.ts'] },
         },
       },
       {

@@ -15,6 +15,8 @@ export type { Pair, RelationConstructor, RelationOptions } from './relation'
 export { bool, eid, f32, f64, i8, i16, i32, str, u8, u16, u32 } from './schema'
 export type { Field, Schema } from './schema'
 
+export type { ArrayFor, Cursor, EachFn, Init, Marked, Store, Unmark, Value, Values } from './types'
+
 export { Added, Cascade, Changed, Not, Optional, Or, Removed, With } from './terms'
 export type { Modifier, Term, TermKind } from './terms'
 

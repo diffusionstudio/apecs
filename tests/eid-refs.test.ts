@@ -126,7 +126,7 @@ describe('patching on despawn (§8.5)', () => {
     world.despawn(leader)
 
     expect(world.get(e, Bare.target)).toBe(leader)
-    expect(world.isAlive(world.get(e, Bare.target))).toBe(false)
+    expect(world.isAlive(world.get(e, Bare.target) as Entity)).toBe(false)
 
     world.destroy()
   })

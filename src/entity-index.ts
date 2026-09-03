@@ -1,3 +1,6 @@
+import { ApecsError } from './debug'
+import { MAX_ENTITIES_PER_WORLD, MAX_ENTITY_ID } from './entity'
+
 /**
  * id → (archetype, row, generation) as three parallel typed arrays, so a
  * liveness check is one compare and a lookup is two reads (SPEC §10.3).
@@ -23,6 +26,9 @@ export class EntityIndex {
 
   public ensure(id: number): void {
     if (id < this.capacity) return
+    // Growth is the one place the 32-bit id field can be exceeded (SPEC §12.3).
+    if (id > MAX_ENTITY_ID)
+      throw new ApecsError(`a world holds at most ${MAX_ENTITIES_PER_WORLD} entities`)
     const size = nextPowerOfTwo(id + 1)
     const archetypes = new Uint32Array(size)
     const rows = new Uint32Array(size)

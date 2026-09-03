@@ -33,7 +33,9 @@
     "bench": "vitest bench --run",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "bench:ci": "vitest bench --run --outputJson=bench/results.json && node scripts/bench-report.mjs bench/results.json",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

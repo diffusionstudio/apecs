@@ -16,7 +16,8 @@ import {
   $trait,
 } from './symbols'
 import { TraitImpl, allocTraitId, makeInstance, validateInit } from './trait'
-import type { Trait, TraitInstance, TraitOptions } from './trait'
+import type { Trait, TraitBase, TraitInstance, TraitOptions } from './trait'
+import type { Init, TraitFields } from './types'
 
 /** Matches a relation to any target: `world.query(ChildOf('*'))` (SPEC §7.3). */
 export const WILDCARD = '*'
@@ -30,14 +31,22 @@ export interface RelationOptions extends TraitOptions {
   maxPairs?: number
 }
 
-export interface Relation extends Trait {
+/**
+ * A relation is a trait whose instances name a target. The bare-value call
+ * signature is what keeps a `Relation<S>` usable everywhere a `Trait<S>` is.
+ */
+export interface RelationBase<S extends Schema = any> extends Omit<TraitBase<S>, never> {
+  (target: Entity | Wildcard, value?: Init<S>): TraitInstance<S>
+  (value?: Init<S>): TraitInstance<S>
   readonly [$options]: Readonly<Required<RelationOptions>>
   /** The synthetic column holding the target of an exclusive relation (SPEC §7.4). */
-  readonly [$targetField]: Field<Entity>
+  readonly [$targetField]: Field<Entity, 'eid'>
 }
 
+export type Relation<S extends Schema = any> = RelationBase<S> & TraitFields<S>
+
 export interface RelationConstructor extends Function {
-  new (schema?: Schema, options?: RelationOptions): Relation
+  new <S extends Schema = undefined>(schema?: S, options?: RelationOptions): Relation<S>
   readonly prototype: Relation
 }
 
@@ -46,16 +55,18 @@ export interface RelationConstructor extends Function {
  * trait wherever storage is concerned — a mask bit, its own data columns —
  * while sharing the relation's fields, options and cursor shape (SPEC §7.4).
  */
-export interface Pair extends Trait {
-  readonly [$relation]: Relation
+export interface PairBase<S extends Schema = any> extends TraitBase<S> {
+  readonly [$relation]: Relation<S>
   readonly [$target]: Entity
 }
+
+export type Pair<S extends Schema = any> = PairBase<S> & TraitFields<S>
 
 const RELATION_DEFAULTS = { exclusive: false, onTargetDespawn: 'remove', maxPairs: 64 } as const
 const DESPAWN_POLICIES = ['remove', 'despawn', 'orphan']
 
 class RelationImpl extends TraitImpl {
-  declare readonly [$targetField]: Field<Entity>
+  declare readonly [$targetField]: Field<Entity, 'eid'>
 
   public constructor(schema?: Schema, options?: RelationOptions) {
     if (__DEV__ && options?.onTargetDespawn !== undefined) {
@@ -65,7 +76,7 @@ class RelationImpl extends TraitImpl {
     super(schema, options, RELATION_DEFAULTS)
     // `super` hands back the callable, so `this` is the relation itself.
     const self = this as unknown as Relation
-    ;(self as { [$targetField]: Field<Entity> })[$targetField] = {
+    ;(self as { [$targetField]: Field<Entity, 'eid'> })[$targetField] = {
       key: WILDCARD,
       path: [],
       kind: 'eid',

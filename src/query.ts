@@ -17,7 +17,6 @@ import {
   $index,
   $options,
   $plan,
-  $row,
   $target,
   $term,
   $terms,
@@ -26,8 +25,9 @@ import {
 import type { Relations } from './targets'
 import type { Ticks } from './ticks'
 import { With, type Modifier, type Term } from './terms'
+import type { EachFn } from './types'
 import { Trait, type TraitInstance } from './trait'
-import { Binding, RowFilter, invoke, termTrait } from './walk'
+import { Binding, RowFilter, termTrait } from './walk'
 
 const HAS = 0
 const NOT = 1
@@ -205,7 +205,7 @@ export function signatureOf(terms: readonly Term[]): string {
  * archetypes and rows back to front over row counts fixed when it started,
  * which is what makes mutating or despawning the current entity safe (SPEC §9).
  */
-export class QueryResult {
+export class QueryResult<T extends readonly Term[] = readonly Term[]> {
   declare readonly [$plan]: QueryPlan
   declare readonly [$terms]: readonly Term[]
   declare readonly [$archetypes]: Archetype[]
@@ -228,8 +228,8 @@ export class QueryResult {
   public constructor(cache: QueryCache, key: string, plan: QueryPlan, terms: readonly Term[]) {
     this.#cache = cache
     this.#key = key
-    this.#binding = new Binding(terms)
     this.#filter = RowFilter.of(terms)
+    this.#binding = new Binding(terms, this.#filter !== null)
     this.#ticks = cache.ticks
     this.#iteration = cache.iteration
     this[$plan] = plan
@@ -275,7 +275,7 @@ export class QueryResult {
     return out
   }
 
-  public each(fn: (...args: any[]) => void): void {
+  public each(fn: EachFn<T>): void {
     const iteration = this.#iteration
     const frame = iteration.enter()
     try {
@@ -291,8 +291,7 @@ export class QueryResult {
     const archetypes = this[$archetypes]
     const caps = (this.#caps = snapshotRows(archetypes, this.#caps))
     const binding = this.#binding
-    const { args, cursors, cursorColumns, boxedArg, boxedColumn, boxedPage } = binding
-    const arity = args.length - 1
+    const { cursors, cursorColumns, boxedColumn, boxedPage } = binding
     const tick = this.#ticks.tick
 
     for (let a = archetypes.length - 1; a >= 0; a--) {
@@ -303,19 +302,14 @@ export class QueryResult {
 
       const { pageShift, pageMask } = archetype
       const cursorCount = cursors.length
-      const boxedCount = boxedArg.length
+      const boxedCount = boxedColumn.length
+      const driver = binding.driver
 
       for (let page = (rows - 1) >>> pageShift, i = (rows - 1) & pageMask; page >= 0; page--) {
-        const handles = archetype.entities[page]
         for (let c = 0; c < cursorCount; c++) cursors[c][$bind](cursorColumns[c], page, tick)
         for (let b = 0; b < boxedCount; b++) boxedPage[b] = boxedColumn[b].pages[page] as unknown[]
 
-        for (; i >= 0; i--) {
-          for (let c = 0; c < cursorCount; c++) cursors[c][$row] = i
-          for (let b = 0; b < boxedCount; b++) args[boxedArg[b]] = boxedPage[b][i]
-          if (__DEV__) frame.row = (page << pageShift) | i
-          invoke(fn, args, arity, handles[i] as Entity)
-        }
+        driver(fn, binding, archetype.entities[page], i, frame, page << pageShift, null, page)
         i = pageMask
       }
     }
@@ -333,8 +327,7 @@ export class QueryResult {
     const archetypes = this[$archetypes]
     const caps = (this.#caps = snapshotRows(archetypes, this.#caps))
     const binding = this.#binding
-    const { args, cursors, cursorColumns, boxedArg, boxedColumn, boxedPage } = binding
-    const arity = args.length - 1
+    const { cursors, cursorColumns, boxedColumn, boxedPage } = binding
 
     for (let a = archetypes.length - 1; a >= 0; a--) {
       const archetype = archetypes[a]
@@ -345,21 +338,14 @@ export class QueryResult {
 
       const { pageShift, pageMask } = archetype
       const cursorCount = cursors.length
-      const boxedCount = boxedArg.length
+      const boxedCount = boxedColumn.length
+      const driver = binding.driver
 
       for (let page = (rows - 1) >>> pageShift, i = (rows - 1) & pageMask; page >= 0; page--) {
-        const handles = archetype.entities[page]
         for (let c = 0; c < cursorCount; c++) cursors[c][$bind](cursorColumns[c], page, tick)
         for (let b = 0; b < boxedCount; b++) boxedPage[b] = boxedColumn[b].pages[page] as unknown[]
 
-        for (; i >= 0; i--) {
-          const entity = handles[i] as Entity
-          if (!filter.accept(entity, page, i)) continue
-          for (let c = 0; c < cursorCount; c++) cursors[c][$row] = i
-          for (let b = 0; b < boxedCount; b++) args[boxedArg[b]] = boxedPage[b][i]
-          if (__DEV__) frame.row = (page << pageShift) | i
-          invoke(fn, args, arity, entity)
-        }
+        driver(fn, binding, archetype.entities[page], i, frame, page << pageShift, filter, page)
         i = pageMask
       }
     }
@@ -373,9 +359,9 @@ export class QueryResult {
    * The memoised order (SPEC §6.7). A field keys on itself and the direction,
    * a comparator on its identity — hoist the comparator to get the cached view.
    */
-  public sortBy(field: Field, direction?: 'asc' | 'desc'): SortedQueryResult
-  public sortBy(compare: Comparator): SortedQueryResult
-  public sortBy(by: Field | Comparator, direction: 'asc' | 'desc' = 'asc'): SortedQueryResult {
+  public sortBy(field: Field, direction?: 'asc' | 'desc'): SortedQueryResult<T>
+  public sortBy(compare: Comparator): SortedQueryResult<T>
+  public sortBy(by: Field | Comparator, direction: 'asc' | 'desc' = 'asc'): SortedQueryResult<T> {
     const descending = typeof by !== 'function' && direction === 'desc'
     let memo = descending ? this.#sortedDescending : this.#sorted
     let sorted = memo?.get(by)

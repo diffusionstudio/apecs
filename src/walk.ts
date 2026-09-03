@@ -1,10 +1,12 @@
 import type { Archetype } from './archetype'
 import type { Column } from './column'
+import { CAN_CODEGEN } from './codegen'
 import { cursorClassFor, type Cursor } from './cursor'
 import { assert } from './debug'
 import { entityId, type Entity } from './entity'
+import type { Frame } from './iteration'
 import { shapeOf } from './relation'
-import { $id, $kind, $options, $poison, $term, $terms, $trait } from './symbols'
+import { $id, $kind, $options, $poison, $row, $term, $terms, $trait } from './symbols'
 import type { Ticks } from './ticks'
 import { isDataTerm, type Modifier, type Term } from './terms'
 import { Trait, type TraitInstance } from './trait'
@@ -45,7 +47,15 @@ export class Binding {
   readonly boxedColumn: Column[] = []
   readonly boxedPage: unknown[][] = []
 
-  public constructor(terms: readonly Term[]) {
+  /** The row loop for the layout `bind` last produced (SPEC §6.5). */
+  public driver: Driver = genericDriver
+  /** One driver per layout this query has seen — `Optional` is what makes it more than one. */
+  readonly #drivers = new Map<number, Driver>()
+  #layout = -1
+  readonly #filtered: boolean
+
+  public constructor(terms: readonly Term[], filtered = false) {
+    this.#filtered = filtered
     for (const term of terms) {
       if (!isDataTerm(term)) continue
       const optional = !(term instanceof Trait) && (term as Modifier)[$term] === 'optional'
@@ -66,6 +76,7 @@ export class Binding {
     cursorColumns.length = 0
     boxedArg.length = 0
     boxedColumn.length = 0
+    let layout = 0
 
     for (let s = 0; s < slots.length; s++) {
       const slot = slots[s]
@@ -77,10 +88,24 @@ export class Binding {
         args[s] = slot.cursor
         cursors.push(slot.cursor)
         cursorColumns.push(columns)
+        layout |= CURSOR << (s << 1)
       } else {
         boxedArg.push(s)
         boxedColumn.push(columns[0])
+        layout |= BOXED << (s << 1)
       }
+    }
+
+    // Archetypes of one query almost always share a layout; only `Optional`
+    // makes it vary, and then only between two or three shapes.
+    if (layout !== this.#layout) {
+      this.#layout = layout
+      let driver = this.#drivers.get(layout)
+      if (driver === undefined) {
+        driver = driverFor(layout, slots.length, this.#filtered)
+        this.#drivers.set(layout, driver)
+      }
+      this.driver = driver
     }
     return true
   }
@@ -98,6 +123,102 @@ export class Binding {
   public poison(): void {
     const slots = this.slots
     for (let s = 0; s < slots.length; s++) slots[s].cursor?.[$poison]()
+  }
+}
+
+/**
+ * The row loop of one page: advance every cursor, read the boxed slots, call
+ * the callback. `frame` and `base` are the dev-only iteration cursor.
+ */
+export type Driver = (
+  fn: (...args: any[]) => void,
+  binding: Binding,
+  handles: Float64Array,
+  start: number,
+  frame: Frame,
+  base: number,
+  filter: RowFilter | null,
+  page: number,
+) => void
+
+const CURSOR = 1
+const BOXED = 2
+/** Two layout bits per slot, so wider argument lists take the generic loop. */
+const MAX_GENERATED_SLOTS = 15
+
+/**
+ * The dispatch, generated per argument layout: cursor row stores and the call
+ * itself are written out, so a row costs the callback and nothing around it
+ * (SPEC §6.5, §12.2).
+ *
+ * One driver per query, not one per layout: the call to the callback is the
+ * hottest site in the library, and sharing a driver between queries is what
+ * would make it megamorphic (SPEC §12.2, rule 2). Falls back to the reflective
+ * loop where `new Function` is unavailable.
+ */
+export function driverFor(layout: number, arity: number, filtered: boolean): Driver {
+  if (!CAN_CODEGEN || arity > MAX_GENERATED_SLOTS) return filtered ? genericFiltered : genericDriver
+  return generateDriver(layout, arity, filtered)
+}
+
+function generateDriver(layout: number, arity: number, filtered: boolean): Driver {
+  let declarations = ''
+  let advance = ''
+  let call = ''
+  let cursors = 0
+  let boxed = 0
+
+  for (let s = 0; s < arity; s++) {
+    switch ((layout >>> (s << 1)) & 3) {
+      case CURSOR:
+        declarations += `const a${s}=c[${cursors++}];`
+        advance += `a${s}[R]=i;`
+        call += `a${s},`
+        break
+      case BOXED:
+        declarations += `const p${s}=g[${boxed++}];`
+        call += `p${s}[i],`
+        break
+      default:
+        call += 'null,'
+    }
+  }
+
+  const accept = filtered ? 'if(!q.accept(h[i],y,i))continue;' : ''
+  const source =
+    `const c=b.cursors,g=b.boxedPage;${declarations}` +
+    `for(let i=s;i>=0;i--){${accept}${advance}${__DEV__ ? 'f.row=k|i;' : ''}n(${call}h[i])}`
+  return new Function('R', `return function(n,b,h,s,f,k,q,y){${source}}`)($row) as Driver
+}
+
+/** The same loop, reading the argument array — the CSP fallback (SPEC §6.5). */
+const genericDriver: Driver = (fn, binding, handles, start, frame, base) => {
+  const { args, cursors, boxedArg, boxedPage } = binding
+  const arity = args.length - 1
+  const cursorCount = cursors.length
+  const boxedCount = boxedArg.length
+
+  for (let i = start; i >= 0; i--) {
+    for (let c = 0; c < cursorCount; c++) cursors[c][$row] = i
+    for (let b = 0; b < boxedCount; b++) args[boxedArg[b]] = boxedPage[b][i]
+    if (__DEV__) frame.row = base | i
+    invoke(fn, args, arity, handles[i] as Entity)
+  }
+}
+
+const genericFiltered: Driver = (fn, binding, handles, start, frame, base, filter, page) => {
+  const { args, cursors, boxedArg, boxedPage } = binding
+  const arity = args.length - 1
+  const cursorCount = cursors.length
+  const boxedCount = boxedArg.length
+
+  for (let i = start; i >= 0; i--) {
+    const entity = handles[i] as Entity
+    if (!filter!.accept(entity, page, i)) continue
+    for (let c = 0; c < cursorCount; c++) cursors[c][$row] = i
+    for (let b = 0; b < boxedCount; b++) args[boxedArg[b]] = boxedPage[b][i]
+    if (__DEV__) frame.row = base | i
+    invoke(fn, args, arity, entity)
   }
 }
 

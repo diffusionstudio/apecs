@@ -2,12 +2,12 @@ import type { Column } from './column'
 import { assert } from './debug'
 import { NULL_ENTITY, type Entity } from './entity'
 import { pairOf, type Relation, type Wildcard } from './relation'
-import type { Field, Plan } from './schema'
+import type { Field, Plan, Schema } from './schema'
 import { $fields, $index, $kind, $options, $plan, $target, $trait, $value } from './symbols'
 import type { Trait, TraitInstance } from './trait'
 
 /** A trait passed bare, or paired with an initial value (SPEC §3.4). */
-export type TraitLike = Trait | TraitInstance
+export type TraitLike<S extends Schema = any> = Trait<S> | TraitInstance<S>
 
 /**
  * The trait that stores `item`. A non-exclusive relation aimed at an entity

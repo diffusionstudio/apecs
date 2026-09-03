@@ -2,6 +2,7 @@ import { warn } from './debug'
 import type { Entity } from './entity'
 import { $index, $mark, $trait } from './symbols'
 import type { Trait } from './trait'
+import type { Marked } from './types'
 
 export type FieldKind =
   | 'i8'
@@ -33,11 +34,11 @@ export type Schema = Record<string, unknown> | (() => unknown) | undefined
 export type SchemaKind = 'tag' | 'struct' | 'aos'
 
 /** One column of a trait, addressable as a value: `Position.x` (SPEC §3.3). */
-export interface Field<V = unknown> {
+export interface Field<V = unknown, K extends FieldKind = FieldKind> {
   /** Flattened column key — `'pos.x'`. Empty for the single column of an AoS trait. */
   readonly key: string
   readonly path: readonly string[]
-  readonly kind: FieldKind
+  readonly kind: K
   /** `null` for boxed columns, which page into plain arrays. */
   readonly array: TypedArrayConstructor | null
   readonly default: V
@@ -72,23 +73,26 @@ const ARRAY_FOR: Record<FieldKind, TypedArrayConstructor | null> = {
   aos: null,
 }
 
-/** Markers type as their underlying primitive so schemas read as plain values (SPEC §3.2). */
+/**
+ * A marker reads as its own primitive — `f32(0)` is a number — and carries the
+ * column kind in a phantom slot the mappings of §11 dispatch on (SPEC §3.2).
+ */
 const mark =
-  <In, Out = In>(kind: FieldKind) =>
-  (value: In): Out =>
-    ({ [$mark]: kind, value }) as unknown as Out
+  <In, K extends FieldKind, Out = In>(kind: K) =>
+  (value: In): Marked<Out, K> =>
+    ({ [$mark]: kind, value }) as unknown as Marked<Out, K>
 
-export const i8 = mark<number>('i8')
-export const i16 = mark<number>('i16')
-export const i32 = mark<number>('i32')
-export const u8 = mark<number>('u8')
-export const u16 = mark<number>('u16')
-export const u32 = mark<number>('u32')
-export const f32 = mark<number>('f32')
-export const f64 = mark<number>('f64')
-export const bool = mark<boolean>('bool')
-export const str = mark<string>('str')
-export const eid = mark<Entity | 0, Entity>('eid')
+export const i8 = mark<number, 'i8'>('i8')
+export const i16 = mark<number, 'i16'>('i16')
+export const i32 = mark<number, 'i32'>('i32')
+export const u8 = mark<number, 'u8'>('u8')
+export const u16 = mark<number, 'u16'>('u16')
+export const u32 = mark<number, 'u32'>('u32')
+export const f32 = mark<number, 'f32'>('f32')
+export const f64 = mark<number, 'f64'>('f64')
+export const bool = mark<boolean, 'bool'>('bool')
+export const str = mark<string, 'str'>('str')
+export const eid = mark<Entity | 0, 'eid', Entity>('eid')
 
 export function isMarker(value: unknown): value is Marker {
   return typeof value === 'object' && value !== null && $mark in value

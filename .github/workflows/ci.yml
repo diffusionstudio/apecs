@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run typecheck
+      # dev, prod and the type-level project (SPEC §12.2, §11).
+      - run: npm test
+      - run: npm run build
+      # The published bundle carries no dev-only path (SPEC §12.2, rule 5).
+      - run: npm run check:bundle
+
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Publishes the numbers to the job summary and fails on a budget breach
+      # (SPEC §12.1). Budgets are ratios within the run, so a noisy runner
+      # moves both sides together.
+      - run: npm run bench:ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmarks
+          path: bench/results.json
