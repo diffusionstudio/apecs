@@ -16,20 +16,22 @@
  *
  *   node --expose-gc memory.mjs <adapter> <n>
  */
-const [key, size] = process.argv.slice(2)
-const n = Number(size)
-const adapter = await import(`./adapters/${key}.mjs`)
+const [key, size] = process.argv.slice(2);
+const n = Number(size);
+const adapter = await import(`./adapters/${key}.mjs`);
 
-const world = await adapter.footprint(n)
+const world = await adapter.footprint(n);
 
 for (let i = 0; i < 8; i++) {
-  globalThis.gc?.()
-  await new Promise((r) => setTimeout(r, 30))
+  globalThis.gc?.();
+  await new Promise((r) => setTimeout(r, 30));
 }
 
-const m = process.memoryUsage()
-if (world === undefined) throw new Error('footprint returned nothing')
+const m = process.memoryUsage();
+if (world === undefined) {
+  throw new Error('footprint returned nothing');
+}
 
 process.stdout.write(
   JSON.stringify({ adapter: key, name: adapter.name, n, bytes: m.heapUsed + m.external }) + '\n',
-)
+);

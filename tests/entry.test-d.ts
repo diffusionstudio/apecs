@@ -1,7 +1,7 @@
-import { expectTypeOf, test } from 'vitest'
+import { expectTypeOf, test } from 'vitest';
 
-import { VERSION } from '../src/index'
+import { VERSION } from '../src/index';
 
 test('VERSION is a string', () => {
-  expectTypeOf(VERSION).toEqualTypeOf<string>()
-})
+  expectTypeOf(VERSION).toEqualTypeOf<string>();
+});

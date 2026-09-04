@@ -4,20 +4,20 @@
  * the value copy, the cursor, the store, the init object, the `each`
  * parameters — is derived from it here.
  */
-import type { Entity } from './entity'
-import type { Field, FieldKind } from './schema'
-import { $mark, $schema, $term, $terms, $trait } from './symbols'
+import type { Entity } from './entity';
+import type { Field, FieldKind } from './schema';
+import { $mark, $schema, $term, $terms, $trait } from './symbols';
 
 /** A schema slot written as `f32(0)`: its primitive, tagged with the column kind. */
-export type Marked<T, K extends FieldKind> = T & { readonly [$mark]: K }
+export type Marked<T, K extends FieldKind> = T & { readonly [$mark]: K };
 
 /** Object types written inline in a schema — a class instance has no index signature. */
-type Plain = Record<string, unknown>
+type Plain = Record<string, unknown>;
 
 /** `0 extends 1 & S` only when `S` is `any`, which the loose internal types use. */
-type IsAny<S> = 0 extends 1 & S ? true : false
+type IsAny<S> = 0 extends 1 & S ? true : false;
 
-type Fn = (...args: never[]) => unknown
+type Fn = (...args: never[]) => unknown;
 
 export type MarkValue<K extends FieldKind> = K extends 'bool'
   ? boolean
@@ -25,7 +25,7 @@ export type MarkValue<K extends FieldKind> = K extends 'bool'
     ? string
     : K extends 'eid'
       ? Entity
-      : number
+      : number;
 
 /** The page type a column of kind `K` hands out (SPEC §6.6). */
 export type ArrayFor<K extends FieldKind> = K extends 'i8'
@@ -46,7 +46,7 @@ export type ArrayFor<K extends FieldKind> = K extends 'i8'
                 ? Float64Array
                 : K extends 'str'
                   ? string[]
-                  : unknown[]
+                  : unknown[];
 
 /** The column kind a bare schema value infers to (SPEC §3.2). */
 export type BareKind<T> = T extends boolean
@@ -55,9 +55,9 @@ export type BareKind<T> = T extends boolean
     ? 'f64'
     : T extends string
       ? 'str'
-      : 'boxed'
+      : 'boxed';
 
-export type KindOf<T> = T extends Marked<unknown, infer K extends FieldKind> ? K : BareKind<T>
+export type KindOf<T> = T extends Marked<unknown, infer K extends FieldKind> ? K : BareKind<T>;
 
 /** A schema slot as the value it reads and writes as. */
 export type Unmark<T> =
@@ -67,7 +67,7 @@ export type Unmark<T> =
       ? T
       : T extends Plain
         ? { -readonly [P in keyof T]: Unmark<T[P]> }
-        : T
+        : T;
 
 /** What `world.get` copies out: the declared shape, markers resolved (SPEC §4.4). */
 export type Value<S> =
@@ -77,7 +77,7 @@ export type Value<S> =
       ? ReturnType<S>
       : S extends Plain
         ? { [K in keyof S]: Unmark<S[K]> }
-        : Record<string, never>
+        : Record<string, never>;
 
 /** What `each` hands out: the same shape, writable — or the AoS reference (SPEC §6.5). */
 export type Cursor<S> =
@@ -87,7 +87,7 @@ export type Cursor<S> =
       ? ReturnType<S>
       : S extends Plain
         ? { -readonly [K in keyof S]: Unmark<S[K]> }
-        : Record<string, never>
+        : Record<string, never>;
 
 /** What `chunk.get` hands out: the pages themselves (SPEC §6.6). */
 export type Store<S> =
@@ -97,11 +97,11 @@ export type Store<S> =
       ? ReturnType<S>[]
       : S extends Plain
         ? { readonly [K in keyof S]: StoreField<S[K]> }
-        : Record<string, never>
+        : Record<string, never>;
 
 type StoreField<T> = T extends Plain
   ? { readonly [P in keyof T]: StoreField<T[P]> }
-  : ArrayFor<KindOf<T>>
+  : ArrayFor<KindOf<T>>;
 
 /** What a trait instance takes: a partial of the value, or the AoS reference (SPEC §3.4). */
 export type Init<S> =
@@ -111,15 +111,15 @@ export type Init<S> =
       ? ReturnType<S>
       : S extends Plain
         ? DeepPartial<Value<S>>
-        : never
+        : never;
 
-type DeepPartial<T> = { [K in keyof T]?: T[K] extends Plain ? DeepPartial<T[K]> : T[K] }
+type DeepPartial<T> = { [K in keyof T]?: T[K] extends Plain ? DeepPartial<T[K]> : T[K] };
 
 type UnionToIntersection<U> = (U extends unknown ? (arg: U) => void : never) extends (
   arg: infer I,
 ) => void
   ? I
-  : never
+  : never;
 
 /**
  * The fields a trait exposes as properties, keyed by their flattened column
@@ -133,10 +133,10 @@ export type TraitFields<S, P extends string = ''> =
           {
             [K in keyof S & string]: S[K] extends Plain
               ? TraitFields<S[K], `${P}${K}.`>
-              : { readonly [Q in `${P}${K}`]: Field<Unmark<S[K]>, KindOf<S[K]>> }
+              : { readonly [Q in `${P}${K}`]: Field<Unmark<S[K]>, KindOf<S[K]>> };
           }[keyof S & string]
         >
-      : unknown
+      : unknown;
 
 // --------------------------------------------------------------- query terms
 
@@ -144,14 +144,14 @@ type SchemaOf<H> = H extends { readonly [$schema]: infer S }
   ? S
   : H extends { readonly [$trait]: { readonly [$schema]: infer S } }
     ? S
-    : never
+    : never;
 
-type IsTag<S> = [S] extends [undefined] ? true : [S] extends [never] ? true : false
+type IsTag<S> = [S] extends [undefined] ? true : [S] extends [never] ? true : false;
 
 /** A term's contribution to the `each` parameter list: one value, or none. */
 type TermValue<H> = H extends {
-  readonly [$term]: 'optional'
-  readonly [$terms]: readonly [infer O]
+  readonly [$term]: 'optional';
+  readonly [$terms]: readonly [infer O];
 }
   ? IsTag<SchemaOf<O>> extends true
     ? []
@@ -160,7 +160,7 @@ type TermValue<H> = H extends {
     ? []
     : IsTag<SchemaOf<H>> extends true
       ? []
-      : [Cursor<SchemaOf<H>>]
+      : [Cursor<SchemaOf<H>>];
 
 /**
  * The data terms of a query, in order. Tags, `Not`, `With` and the tick
@@ -171,7 +171,7 @@ export type Values<T extends readonly unknown[]> = T extends readonly [
   ...infer R extends readonly unknown[],
 ]
   ? [...TermValue<H>, ...Values<R>]
-  : []
+  : [];
 
 /** The `each` callback: the data terms positionally, then the entity (SPEC §6.5). */
-export type EachFn<T extends readonly unknown[]> = (...args: [...Values<T>, Entity]) => void
+export type EachFn<T extends readonly unknown[]> = (...args: [...Values<T>, Entity]) => void;

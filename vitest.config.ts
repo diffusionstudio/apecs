@@ -1,8 +1,8 @@
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath } from 'node:url';
 
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config';
 
-const include = ['tests/**/*.test.ts']
+const include = ['tests/**/*.test.ts'];
 
 /**
  * The bench project resolves `src/index` to the built bundle. Vite's SSR
@@ -15,7 +15,7 @@ const bundle = [
     find: /^(\.\.\/)+src\/index$/,
     replacement: fileURLToPath(new URL('./dist/index.js', import.meta.url)),
   },
-]
+];
 
 export default defineConfig({
   test: {
@@ -71,4 +71,4 @@ export default defineConfig({
       },
     ],
   },
-})
+});

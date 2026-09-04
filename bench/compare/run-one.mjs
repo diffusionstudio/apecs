@@ -9,13 +9,13 @@
  *
  *   node run-one.mjs <adapter> <benchmark>
  */
-import { measure } from 'mitata'
+import { measure } from 'mitata';
 
-import { BENCHMARKS } from './lib/spec.mjs'
+import { BENCHMARKS } from './lib/spec.mjs';
 
-const [adapterName, benchName] = process.argv.slice(2)
-const adapter = await import(`./adapters/${adapterName}.mjs`)
-const spec = BENCHMARKS[benchName] ?? { params: {} }
+const [adapterName, benchName] = process.argv.slice(2);
+const adapter = await import(`./adapters/${adapterName}.mjs`);
+const spec = BENCHMARKS[benchName] ?? { params: {} };
 
 const out = {
   adapter: adapter.name,
@@ -24,16 +24,20 @@ const out = {
   notes: adapter.notes,
   benchmark: benchName,
   variants: {},
-}
+};
 
 for (const [key, factory] of Object.entries(adapter.benchmarks)) {
-  const [bench, tier] = key.split('/')
-  if (bench !== benchName) continue
+  const [bench, tier] = key.split('/');
+  if (bench !== benchName) {
+    continue;
+  }
   try {
-    const run = await factory(spec.params)
+    const run = await factory(spec.params);
     // Warm up outside the measurement so JIT tiering is not part of the number.
-    for (let i = 0; i < 3; i++) await run()
-    const stats = await measure(run, { min_cpu_time: 1_000e6, inner_gc: false })
+    for (let i = 0; i < 3; i++) {
+      await run();
+    }
+    const stats = await measure(run, { min_cpu_time: 1_000e6, inner_gc: false });
     out.variants[tier] = {
       avg: stats.avg,
       p50: stats.p50,
@@ -41,10 +45,10 @@ for (const [key, factory] of Object.entries(adapter.benchmarks)) {
       p99: stats.p99,
       min: stats.min,
       samples: stats.samples.length,
-    }
+    };
   } catch (error) {
-    out.variants[tier] = { error: error.message }
+    out.variants[tier] = { error: error.message };
   }
 }
 
-process.stdout.write(JSON.stringify(out) + '\n')
+process.stdout.write(JSON.stringify(out) + '\n');

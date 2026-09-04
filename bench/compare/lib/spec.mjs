@@ -62,33 +62,37 @@ export const BENCHMARKS = {
     measures:
       'Per-entity access by handle. Only ~20% of the cost is the shuffled order — the rest is the accessor call itself, and it is there in sequential order too.',
   },
-}
+};
 
 /** Ergonomic tier = the idiom a user reaches for. Raw tier = the escape hatch. */
-export const TIERS = { ergonomic: 'ergonomic', raw: 'raw' }
+export const TIERS = { ergonomic: 'ergonomic', raw: 'raw' };
 
-export const ADAPTERS = ['baseline', 'apecs', 'bitecs', 'koota', 'becsy']
+export const ADAPTERS = ['baseline', 'apecs', 'bitecs', 'koota', 'becsy'];
 
 /** A deterministic shuffle, so every library walks the same "random" order. */
 export function permutation(n) {
-  const order = new Uint32Array(n)
-  for (let i = 0; i < n; i++) order[i] = i
-  let state = 0x9e3779b9
-  for (let i = n - 1; i > 0; i--) {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
-    const j = state % (i + 1)
-    const t = order[i]
-    order[i] = order[j]
-    order[j] = t
+  const order = new Uint32Array(n);
+  for (let i = 0; i < n; i++) {
+    order[i] = i;
   }
-  return order
+  let state = 0x9e3779b9;
+  for (let i = n - 1; i > 0; i--) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const j = state % (i + 1);
+    const t = order[i];
+    order[i] = order[j];
+    order[j] = t;
+  }
+  return order;
 }
 
 /** How many entities land in fragment `f` of `archetypes`, summing to `entities`. */
 export function fragmentSizes(entities, archetypes) {
-  const sizes = new Array(archetypes)
-  const per = Math.floor(entities / archetypes)
-  let rest = entities - per * archetypes
-  for (let f = 0; f < archetypes; f++) sizes[f] = per + (f < rest ? 1 : 0)
-  return sizes
+  const sizes = new Array(archetypes);
+  const per = Math.floor(entities / archetypes);
+  let rest = entities - per * archetypes;
+  for (let f = 0; f < archetypes; f++) {
+    sizes[f] = per + (f < rest ? 1 : 0);
+  }
+  return sizes;
 }

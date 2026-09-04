@@ -1,141 +1,141 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest';
 
-import { Trait, World, f32 } from '../src/index'
-import type { Entity } from '../src/index'
+import { Trait, World, f32 } from '../src/index';
+import type { Entity } from '../src/index';
 
-const Position = new Trait({ x: f32(0), y: f32(0) })
-const Velocity = new Trait({ x: f32(0), y: f32(0) })
-const IsActive = new Trait()
+const Position = new Trait({ x: f32(0), y: f32(0) });
+const Velocity = new Trait({ x: f32(0), y: f32(0) });
+const IsActive = new Trait();
 
 describe('query enter and exit (§8.2)', () => {
   test('add fires onEnter the moment the entity starts matching', () => {
-    const world = new World()
-    const query = world.query(Position, IsActive)
-    const entered: Entity[] = []
-    let matchedDuring = false
+    const world = new World();
+    const query = world.query(Position, IsActive);
+    const entered: Entity[] = [];
+    let matchedDuring = false;
     world.onEnter(query, (entity) => {
-      matchedDuring = world.has(entity, Position) && world.has(entity, IsActive)
-      entered.push(entity)
-    })
+      matchedDuring = world.has(entity, Position) && world.has(entity, IsActive);
+      entered.push(entity);
+    });
 
-    const e = world.spawn(Position)
-    expect(entered).toEqual([])
+    const e = world.spawn(Position);
+    expect(entered).toEqual([]);
 
-    world.add(e, IsActive)
-    expect(entered).toEqual([e])
-    expect(matchedDuring).toBe(true)
+    world.add(e, IsActive);
+    expect(entered).toEqual([e]);
+    expect(matchedDuring).toBe(true);
 
-    world.destroy()
-  })
+    world.destroy();
+  });
 
   test('spawn and despawn count as transitions', () => {
-    const world = new World()
-    const query = world.query(Position, IsActive)
-    const log: string[] = []
-    world.onEnter(query, (e) => log.push(`enter:${e}`))
-    world.onExit(query, (e) => log.push(`exit:${e}`))
+    const world = new World();
+    const query = world.query(Position, IsActive);
+    const log: string[] = [];
+    world.onEnter(query, (e) => log.push(`enter:${e}`));
+    world.onExit(query, (e) => log.push(`exit:${e}`));
 
-    const e = world.spawn(Position, IsActive)
-    world.despawn(e)
+    const e = world.spawn(Position, IsActive);
+    world.despawn(e);
 
-    expect(log).toEqual([`enter:${e}`, `exit:${e}`])
+    expect(log).toEqual([`enter:${e}`, `exit:${e}`]);
 
-    world.destroy()
-  })
+    world.destroy();
+  });
 
   test('losing any required trait fires onExit', () => {
-    const world = new World()
-    const query = world.query(Position, IsActive)
-    const exited: Entity[] = []
-    world.onExit(query, (entity) => exited.push(entity))
+    const world = new World();
+    const query = world.query(Position, IsActive);
+    const exited: Entity[] = [];
+    world.onExit(query, (entity) => exited.push(entity));
 
-    const a = world.spawn(Position, IsActive)
-    const b = world.spawn(Position, IsActive)
-    world.remove(a, IsActive)
-    world.remove(b, Position)
+    const a = world.spawn(Position, IsActive);
+    const b = world.spawn(Position, IsActive);
+    world.remove(a, IsActive);
+    world.remove(b, Position);
 
-    expect(exited).toEqual([a, b])
+    expect(exited).toEqual([a, b]);
 
-    world.destroy()
-  })
+    world.destroy();
+  });
 
   test('a move between two matching archetypes fires neither', () => {
-    const world = new World()
-    const query = world.query(Position, IsActive)
-    let events = 0
-    world.onEnter(query, () => events++)
-    world.onExit(query, () => events++)
+    const world = new World();
+    const query = world.query(Position, IsActive);
+    let events = 0;
+    world.onEnter(query, () => events++);
+    world.onExit(query, () => events++);
 
-    const e = world.spawn(Position, IsActive) // the one enter
-    world.add(e, Velocity)
-    world.remove(e, Velocity)
+    const e = world.spawn(Position, IsActive); // the one enter
+    world.add(e, Velocity);
+    world.remove(e, Velocity);
 
-    expect(events).toBe(1)
+    expect(events).toBe(1);
 
-    world.destroy()
-  })
+    world.destroy();
+  });
 
   test('an entity that never matched fires nothing', () => {
-    const world = new World()
-    const query = world.query(Position, IsActive)
-    let events = 0
-    world.onEnter(query, () => events++)
-    world.onExit(query, () => events++)
+    const world = new World();
+    const query = world.query(Position, IsActive);
+    let events = 0;
+    world.onEnter(query, () => events++);
+    world.onExit(query, () => events++);
 
-    const e = world.spawn(Velocity)
-    world.add(e, IsActive) // IsActive alone is not a match
-    world.despawn(e)
+    const e = world.spawn(Velocity);
+    world.add(e, IsActive); // IsActive alone is not a match
+    world.despawn(e);
 
-    expect(events).toBe(0)
+    expect(events).toBe(0);
 
-    world.destroy()
-  })
+    world.destroy();
+  });
 
   test('each query sees only its own boundary', () => {
-    const world = new World()
-    const log: string[] = []
-    world.onEnter(world.query(Position), (e) => log.push(`pos:${e}`))
-    world.onEnter(world.query(Position, IsActive), (e) => log.push(`active:${e}`))
+    const world = new World();
+    const log: string[] = [];
+    world.onEnter(world.query(Position), (e) => log.push(`pos:${e}`));
+    world.onEnter(world.query(Position, IsActive), (e) => log.push(`active:${e}`));
 
-    const e = world.spawn(Position)
-    world.add(e, IsActive) // already inside query(Position); only the second fires
+    const e = world.spawn(Position);
+    world.add(e, IsActive); // already inside query(Position); only the second fires
 
-    expect(log).toEqual([`pos:${e}`, `active:${e}`])
+    expect(log).toEqual([`pos:${e}`, `active:${e}`]);
 
-    world.destroy()
-  })
+    world.destroy();
+  });
 
   test('a batch fires per entity, in order (§8.4)', () => {
-    const world = new World()
-    const query = world.query(Position, IsActive)
-    const entered: Entity[] = []
-    world.onEnter(query, (entity) => entered.push(entity))
+    const world = new World();
+    const query = world.query(Position, IsActive);
+    const entered: Entity[] = [];
+    world.onEnter(query, (entity) => entered.push(entity));
 
-    const batch = world.spawnMany(2, Position)
-    world.addMany(batch, IsActive)
+    const batch = world.spawnMany(2, Position);
+    world.addMany(batch, IsActive);
 
-    expect(entered).toEqual([batch[0], batch[1]])
+    expect(entered).toEqual([batch[0], batch[1]]);
 
-    world.destroy()
-  })
+    world.destroy();
+  });
 
   test('unsubscribe stops enter and exit dispatch', () => {
-    const world = new World()
-    const query = world.query(Position, IsActive)
-    let entered = 0
-    let exited = 0
-    const offEnter = world.onEnter(query, () => entered++)
-    const offExit = world.onExit(query, () => exited++)
+    const world = new World();
+    const query = world.query(Position, IsActive);
+    let entered = 0;
+    let exited = 0;
+    const offEnter = world.onEnter(query, () => entered++);
+    const offExit = world.onExit(query, () => exited++);
 
-    const e = world.spawn(Position, IsActive)
-    offEnter()
-    offExit()
-    world.remove(e, IsActive)
-    world.add(e, IsActive)
+    const e = world.spawn(Position, IsActive);
+    offEnter();
+    offExit();
+    world.remove(e, IsActive);
+    world.add(e, IsActive);
 
-    expect(entered).toBe(1)
-    expect(exited).toBe(0)
+    expect(entered).toBe(1);
+    expect(exited).toBe(0);
 
-    world.destroy()
-  })
-})
+    world.destroy();
+  });
+});

@@ -7,9 +7,9 @@
  *
  *   node scripts/bench-report.mjs [results.json]
  */
-import { appendFileSync, readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs';
 
-const RESULTS = process.argv[2] ?? 'bench/results.json'
+const RESULTS = process.argv[2] ?? 'bench/results.json';
 
 /** Every budget: what it measures, what it must be, and what §12.1 asks for. */
 const BUDGETS = [
@@ -80,25 +80,27 @@ const BUDGETS = [
       ) / m('sorted-static', 'apecs sorted (rebuild)'),
     format: (v) => `${v.toFixed(2)}×`,
   },
-]
+];
 
-const files = JSON.parse(readFileSync(RESULTS, 'utf8')).files
-const results = new Map()
+const files = JSON.parse(readFileSync(RESULTS, 'utf8')).files;
+const results = new Map();
 
 for (const file of files) {
   for (const group of file.groups) {
-    const suite = group.fullName.split('>').pop().trim()
+    const suite = group.fullName.split('>').pop().trim();
     for (const benchmark of group.benchmarks) {
-      results.set(`${suite} ${benchmark.name}`, benchmark)
+      results.set(`${suite} ${benchmark.name}`, benchmark);
     }
   }
 }
 
 /** Budgets read the median: one GC pause must not turn a ratio into a failure. */
 function median(suite, name) {
-  const benchmark = results.get(`${suite} ${name}`)
-  if (benchmark === undefined) throw new Error(`no benchmark "${suite} > ${name}" in ${RESULTS}`)
-  return benchmark.median
+  const benchmark = results.get(`${suite} ${name}`);
+  if (benchmark === undefined) {
+    throw new Error(`no benchmark "${suite} > ${name}" in ${RESULTS}`);
+  }
+  return benchmark.median;
 }
 
 const lines = [
@@ -106,35 +108,39 @@ const lines = [
   '',
   '| benchmark | median | mean | ops/s | ±rme |',
   '| --- | --- | --- | --- | --- |',
-]
+];
 for (const [key, benchmark] of results) {
-  const at = key.indexOf(' ')
+  const at = key.indexOf(' ');
   lines.push(
     `| ${key.slice(0, at)} · ${key.slice(at + 1)} | ${benchmark.median.toFixed(4)} ms | ` +
       `${benchmark.mean.toFixed(4)} ms | ${Math.round(benchmark.hz).toLocaleString('en-US')} | ` +
       `${benchmark.rme.toFixed(1)}% |`,
-  )
+  );
 }
 
-lines.push('', '| budget | measured | limit | §12.1 target | |', '| --- | --- | --- | --- | --- |')
+lines.push('', '| budget | measured | limit | §12.1 target | |', '| --- | --- | --- | --- | --- |');
 
-let failed = 0
+let failed = 0;
 for (const budget of BUDGETS) {
-  const value = budget.value(median)
+  const value = budget.value(median);
   // A negative limit reads as "at least this much", for the ratios that must be large.
-  const ok = budget.limit < 0 ? value >= -budget.limit : value <= budget.limit
-  if (!ok) failed++
-  const limit = budget.limit < 0 ? `≥ ${-budget.limit}×` : `≤ ${budget.format(budget.limit)}`
+  const ok = budget.limit < 0 ? value >= -budget.limit : value <= budget.limit;
+  if (!ok) {
+    failed++;
+  }
+  const limit = budget.limit < 0 ? `≥ ${-budget.limit}×` : `≤ ${budget.format(budget.limit)}`;
   lines.push(
     `| ${budget.name} | ${budget.format(value)} | ${limit} | ${budget.spec} | ${ok ? '✅' : '❌'} |`,
-  )
+  );
 }
 
-const report = lines.join('\n')
-console.log(report)
-if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${report}\n`)
+const report = lines.join('\n');
+console.log(report);
+if (process.env.GITHUB_STEP_SUMMARY) {
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${report}\n`);
+}
 
 if (failed > 0) {
-  console.error(`\n${failed} benchmark budget(s) exceeded`)
-  process.exit(1)
+  console.error(`\n${failed} benchmark budget(s) exceeded`);
+  process.exit(1);
 }

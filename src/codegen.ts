@@ -5,10 +5,10 @@
  */
 export function probeCodegen(factory: FunctionConstructor = Function): boolean {
   try {
-    return factory('return 1')() === 1
+    return factory('return 1')() === 1;
   } catch {
-    return false
+    return false;
   }
 }
 
-export const CAN_CODEGEN = /* @__PURE__ */ probeCodegen()
+export const CAN_CODEGEN = /* @__PURE__ */ probeCodegen();

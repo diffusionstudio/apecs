@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'tsdown';
 
 export default defineConfig({
   entry: ['src/index.ts', 'src/internal.ts'],
@@ -13,4 +13,4 @@ export default defineConfig({
   treeshake: true,
   // Dev-only assertions are dropped entirely from the published build (SPEC §12.2).
   define: { __DEV__: 'false' },
-})
+});
