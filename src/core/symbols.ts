@@ -32,4 +32,5 @@ export const $bind = Symbol('apecs.bind');
 export const $row = Symbol('apecs.row');
 export const $poison = Symbol('apecs.poison');
 export const $queries = Symbol('apecs.queries');
+export const $destroyed = Symbol('apecs.destroyed');
 export const $view = Symbol('apecs.view');

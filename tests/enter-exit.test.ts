@@ -43,6 +43,21 @@ describe('query enter and exit (§8.2)', () => {
     world.destroy();
   });
 
+  test('exit on despawn fires once the entity is gone', () => {
+    const world = new World();
+    const query = world.query(Position, IsActive);
+    let aliveDuring = true;
+    world.onExit(query, (e) => {
+      aliveDuring = world.isAlive(e);
+    });
+
+    world.despawn(world.spawn(Position, IsActive));
+
+    expect(aliveDuring).toBe(false);
+
+    world.destroy();
+  });
+
   test('losing any required trait fires onExit', () => {
     const world = new World();
     const query = world.query(Position, IsActive);

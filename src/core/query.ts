@@ -99,7 +99,7 @@ export class QueryPlan {
 }
 
 /** An exclusive relation aimed at one entity: served by the target index, not the mask (SPEC §7.4). */
-function indexedTarget(term: Term): Entity {
+export function indexedTarget(term: Term): Entity {
   if (term instanceof Trait) {
     return NULL_ENTITY;
   }

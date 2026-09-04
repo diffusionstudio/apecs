@@ -34,6 +34,7 @@ import {
 import type { Field, Schema } from './schema';
 import {
   $archetypes,
+  $destroyed,
   $entities,
   $id,
   $index,
@@ -158,6 +159,8 @@ export class World {
 
   /** Id 1 in every world; world traits are ordinary traits on it (SPEC §5.4). */
   declare readonly entity: Entity;
+  /** Readable by the bindings, which must not assert from a frame callback (SPEC-CLIENTS §C.3). */
+  public [$destroyed] = false;
 
   /** Ring buffer of retired ids with the generation they will come back with. */
   #freeIds = new Uint32Array(INITIAL_FREE_CAPACITY);
@@ -169,7 +172,6 @@ export class World {
 
   #accessors = new Map<Field, Accessor<unknown>>();
   #host: AccessorHost | null = null;
-  #destroyed = false;
 
   readonly #ticks = new Ticks();
   readonly #iteration = new Iteration();
@@ -644,7 +646,7 @@ export class World {
   }
 
   public destroy(): void {
-    if (this.#destroyed) {
+    if (this[$destroyed]) {
       return;
     }
     this.#clear();
@@ -652,7 +654,7 @@ export class World {
     if (this.#onRemove.size !== 0) {
       this.#removing(this.entity, WORLD_ENTITY_ID);
     }
-    this.#destroyed = true;
+    this[$destroyed] = true;
     this[$queries].clear();
     this[$archetypes].dispose();
     this[$relations].clear();
@@ -676,10 +678,12 @@ export class World {
     if (this.#onRemove.size !== 0) {
       this.#removing(entity, id);
     }
-    if (this.#boundaries.length !== 0) {
-      this.#crossed(entity, this.#archetypeOf(id), null);
-    }
+    // Exit fires once the entity is gone, as it does after `remove` (SPEC §8.2).
+    const from = this.#boundaries.length !== 0 ? this.#archetypeOf(id) : null;
     this.#release(id);
+    if (from !== null) {
+      this.#crossed(entity, from, null);
+    }
     this.#resolveTargets(entity);
     if (this[$archetypes].refs.length !== 0) {
       this.#patchRefs(entity);
@@ -1398,7 +1402,7 @@ export class World {
   }
 
   #assertNotDestroyed(): void {
-    assert(!this.#destroyed, 'this world has been destroyed');
+    assert(!this[$destroyed], 'this world has been destroyed');
   }
 
   #assertAlive(entity: Entity, id: number): void {
