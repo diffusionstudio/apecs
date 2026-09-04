@@ -60,7 +60,7 @@ export const BENCHMARKS = {
     params: { entities: 100_000 },
     what: 'Read and write one field on 100 000 entities in shuffled order, by entity handle.',
     measures:
-      'The archetype tax. Random access is where a row-indirection design should lose to a flat sparse set.',
+      'Per-entity access by handle. Only ~20% of the cost is the shuffled order — the rest is the accessor call itself, and it is there in sequential order too.',
   },
 }
 

@@ -110,7 +110,18 @@ w(
   `(${f.becsyChecks.coalescing.inFrameUs}µs in-frame vs ${f.becsyChecks.coalescing.alternatingFramesUs}µs across alternating frames — it is doing the work).`,
 )
 w()
-w('Every figure is the mitata average over a ≥1s CPU-time sample, after an explicit warmup.')
+w(
+  'Every figure is the mitata average over a ≥1s CPU-time sample after an explicit warmup, and each',
+)
+w(
+  `cell is the **minimum across ${r.meta.runs ?? 1} full runs**. One pass is not trustworthy on a laptop: across runs some`,
+)
+w(
+  "competitor cells moved by tens of percent while apecs's moved under 2%, which is background load",
+)
+w(
+  `rather than a property of any library (worst observed spread: ${r.meta.worstSpread ? r.meta.worstSpread.cell + ' at ' + Math.round(r.meta.worstSpread.spread * 100) + '%' : 'n/a'}).`,
+)
 w()
 w('## Head-to-head')
 w()
@@ -314,12 +325,75 @@ w(
 )
 w('This is the clearest actionable gap the comparison turned up.')
 w()
+w('## What the accessor work changed')
+w()
+w('`random_access` was the worst figure in the previous report — 5 971 µs, 43× behind bitECS. Two')
+w(
+  'changes landed since: a cleanup of `World#get`/`#set`, and `world.accessor(field)`, a handle that',
+)
+w('resolves a field once and keeps a table indexed by archetype id.')
+w()
+w('| | ns/entity | `random_access` |')
+w('| --- | --- | --- |')
+w('| `world.get` + `world.set`, before | 51.9 | 5 971 µs |')
+w(
+  `| \`world.get\` + \`world.set\`, after the cleanup | ${f.randomAccessBreakdown.getAndSetShuffled} | ${fmt(tier('random_access', 'apecs', 'ergonomic'))} µs |`,
+)
+w(
+  `| \`world.accessor\` | ${f.accessor.shippedAccessor} | ${fmt(tier('random_access', 'apecs', 'raw'))} µs |`,
+)
+w()
+{
+  // Ranked from the results rather than asserted — the first draft of this
+  // paragraph claimed a place apecs had not actually taken.
+  const ranked = ['apecs', 'bitecs', 'koota', 'becsy']
+    .map((lib) => ({ lib: TITLE[lib], v: best('random_access', lib) }))
+    .sort((a, b) => a.v - b.v)
+  const place = ranked.findIndex((x) => x.lib === 'apecs') + 1
+  const gap = best('random_access', 'apecs') / best('random_access', 'bitecs')
+  w(
+    `That is **${(5971000 / best('random_access', 'apecs')).toFixed(1)}× on the benchmark**, and it closes the gap to bitECS from 43× to ${gap.toFixed(1)}×.`,
+  )
+  w(
+    `It does **not** change the placing: apecs is still ${place}th of four here, behind ${ranked
+      .slice(0, place - 1)
+      .map((x) => `${x.lib} (${fmt(x.v)} µs)`)
+      .join(', ')}.`,
+  )
+  w(
+    'And it cannot reach bitECS: two dependent lookups plus paged columns against one flat array load',
+  )
+  w(
+    'is inherent to an archetype design. The remaining question is whether the gap to koota — whose',
+  )
+  w('stores are id-indexed, so its raw tier is a single array index — is worth closing further.')
+}
+w()
+w(
+  '**A correction to the estimate that motivated this.** The earlier prototype predicted 8.8 ns/entity.',
+)
+w('That figure compared a *fused* read-modify-write against a two-call `get` + `set`, and used a')
+w('one-entry cache that collapses to 27 ns once the world fragments — it was not a like-for-like')
+w(
+  `target. Measured like for like, a bare dense-table prototype costs ${f.accessor.bareDenseTablePrototype} ns, and ${f.accessor.prototypePlusStampAndOnChange} ns once it also`,
+)
+w(
+  `does the change-tick stamping a correct \`set\` owes. The shipped accessor is ${f.accessor.shippedAccessor} ns — within 2 ns`,
+)
+w('of the practical ceiling for a design that does not degrade under fragmentation.')
+w()
+w('The iteration path was not touched and did not move: `each` is still')
+w(
+  `${f.apecsCallCost.each.fixedNs} ns + ${f.apecsCallCost.each.perEntityNs} ns/entity, \`chunks\` still ${f.apecsCallCost.chunks.fixedNs} ns + ${f.apecsCallCost.chunks.perEntityNs} ns/entity.`,
+)
+w()
 w('## Reproducing')
 w()
 w('```bash')
 w('cd bench/compare && npm install')
-w('node run.mjs        # census, timings, memory -> results.json')
-w('node report.mjs     # results.json + findings.json -> REPORT.md')
+w('node run.mjs                                     # one pass -> results.json')
+w('node merge.mjs results.json a.json b.json c.json # per-cell minimum across passes')
+w('node report.mjs                                  # -> REPORT.md')
 w('```')
 w()
 w('Supplementary measurements in `findings.json` each name the script that reproduces them.')

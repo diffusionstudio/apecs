@@ -1,37 +1,37 @@
 {
-  "note": "Supplementary measurements beyond the head-to-head suite. Each entry names the script that reproduces it. All on the same machine and Node version as results.json.",
+  "note": "Supplementary measurements beyond the head-to-head suite. Each entry names the script that reproduces it. apecs figures re-measured after the accessor work (src/accessor.ts); competitor figures are unchanged, their versions having not moved.",
   "traitCountSweep": {
     "script": "node cliff-cross.mjs <library> <k>   (one k per process, deliberately)",
     "what": "ns per entity-visit, ergonomic tier: N=1000 entities carrying k distinct traits, one pass per trait.",
     "ks": [1, 2, 3, 4, 5, 6, 8],
-    "apecs": [2.2, 1.92, 2.62, 2.87, 12.75, 38.24, 40.02],
+    "apecs": [2.25, 2.0, 2.68, 2.87, 12.61, 39.07, 40.85],
     "koota": [21.98, 32.46, 33.34, 32.67, 32.63, 32.83, 32.5],
     "bitecs": [1.62, 1.52, 1.52, 1.53, 1.53, 1.54, 1.58],
     "becsy": [5.44, 9.59, 9.92, 10.36, 38.43, 38.73, 38.2],
     "apecsChunks": {
       "script": "node chunks-cliff.mjs <k>",
       "ks": [1, 2, 4, 5, 8],
-      "ns": [1.01, 0.98, 1.0, 0.99, 1.21]
+      "ns": [0.98, 0.98, 1.0, 0.99, 1.15]
     }
   },
   "apecsCallCost": {
     "script": "node scaling.mjs",
-    "what": "Fixed cost per call plus marginal cost per entity, single-trait query.",
+    "what": "Fixed cost per call plus marginal cost per entity, single-trait query. Unchanged by the accessor work -- the iteration path was not touched.",
     "each": {
-      "fixedNs": 165,
-      "perEntityNs": 1.77
+      "fixedNs": 168,
+      "perEntityNs": 1.76
     },
     "chunks": {
       "fixedNs": 35,
-      "perEntityNs": 0.93
+      "perEntityNs": 0.95
     }
   },
   "sortedQueries": {
     "script": "node capability.mjs <library> <static|drift>",
     "what": "100 000 entities iterated in sorted order every frame, microseconds.",
     "apecs": {
-      "static": 3320.7,
-      "drift": 3033.9
+      "static": 3323.6,
+      "drift": 3070.4
     },
     "koota": {
       "static": 26321.0,
@@ -44,9 +44,9 @@
   },
   "sortedIsolation": {
     "script": "node sorted-isolate.mjs",
-    "what": "Same query, same data: linear vs sorted iteration, ns per entity.",
-    "plainEach": 2.0,
-    "sortedEach": 38.6,
+    "what": "Same query, same data: linear vs sorted iteration, ns per entity. Still open.",
+    "plainEach": 1.9,
+    "sortedEach": 38.9,
     "handWrittenGatherOverFixedOrder": 1.3,
     "sortedEntitiesOnly": 5.4
   },
@@ -54,9 +54,9 @@
     "script": "node sorted-scaling.mjs",
     "what": "sorted.entities() on a view whose keys were never touched. SPEC 12.1 budgets zero work; cost is flat per entity at every size, i.e. O(n).",
     "nsPerEntity": {
-      "1000": 5.78,
-      "10000": 5.57,
-      "100000": 5.43
+      "1000": 5.88,
+      "10000": 5.24,
+      "100000": 5.79
     }
   },
   "becsyChecks": {
@@ -76,11 +76,19 @@
   },
   "randomAccessBreakdown": {
     "script": "node random-access-breakdown.mjs",
-    "what": "apecs random_access split apart, ns per entity. The shuffled order contributes only 22% -- the dominant cost is the per-entity accessor call itself, not address resolution or cache misses.",
-    "getAndSetShuffled": 51.9,
-    "getAndSetSequential": 40.5,
-    "getOnlyShuffled": 23.9,
-    "setOnlyShuffled": 18.4,
-    "sameWritesViaEach": 1.9
+    "what": "apecs random_access split apart, ns per entity, AFTER the Tier 1 cleanup. Was 51.9 / 40.5 / 23.9 / 18.4 / 1.9 before.",
+    "getAndSetShuffled": 30.8,
+    "getAndSetSequential": 24.4,
+    "getOnlyShuffled": 19.9,
+    "setOnlyShuffled": 16.8,
+    "sameWritesViaEach": 1.8
+  },
+  "accessor": {
+    "script": "node proto-accessor-gap.mjs",
+    "what": "world.accessor() against the prototypes that motivated it. The earlier '8.8 ns ceiling' compared a FUSED read-modify-write against a two-call get+set, and used a one-entry cache that collapses under fragmentation -- it was not a like-for-like target. Against a like-for-like dense-table prototype the shipped accessor is within 2 ns.",
+    "shippedAccessor": 14.8,
+    "bareDenseTablePrototype": 12.7,
+    "prototypePlusStampAndOnChange": 13.2,
+    "getSetAfterTier1": 27.9
   }
 }

@@ -9,6 +9,7 @@ are never devDependencies of apecs.
 ```bash
 npm install
 node run.mjs        # census, timings, memory  -> results.json
+node merge.mjs results.json a.json b.json c.json   # per-cell minimum across passes
 node report.mjs     # results.json + findings.json -> REPORT.md
 ```
 
@@ -54,3 +55,4 @@ Recorded in `findings.json`, each with the script that reproduces it:
 | `random-access-breakdown.mjs`          | How much of `random_access` is the shuffled order, and how much is the accessor call?      |
 | `proto-accessor.mjs`                   | Prototype: how much of `random_access` is recoverable, and by which change.                |
 | `proto-accessor-frag.mjs <k>`          | Prototype: does the accessor cache survive archetype fragmentation?                        |
+| `proto-accessor-gap.mjs`               | Why the shipped accessor lands at 14.8 ns where the prototype claimed 8.8.                 |
