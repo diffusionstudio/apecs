@@ -81,6 +81,13 @@ const ENTRIES = {
     'createTarget',
     'createParent',
     'createChildren',
+    'createAccessor',
+    'createEntity',
+    'onAdd',
+    'onRemove',
+    'onChange',
+    'onEnter',
+    'onExit',
   ],
 };
 

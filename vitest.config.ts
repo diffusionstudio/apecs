@@ -3,6 +3,19 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 const include = ['tests/**/*.test.ts'];
+/** The Solid binding's tests run in their own projects, below. */
+const solid = ['tests/solid/**/*.test.ts'];
+const exclude = ['**/node_modules/**', ...solid];
+
+/**
+ * `solid-js` ships conditional exports and Node's resolver picks the server
+ * build, whose signals never propagate. Inlining it lets Vite resolve it with
+ * the browser conditions instead (SPEC-CLIENTS §C.9).
+ */
+const solidProject = {
+  ssr: { resolve: { conditions: ['browser', 'development'] } },
+  test: { include: solid, benchmark: { include: [] }, server: { deps: { inline: ['solid-js'] } } },
+};
 
 /**
  * The bench project resolves `src/index` to the built bundle. Vite's SSR
@@ -27,6 +40,7 @@ export default defineConfig({
         test: {
           name: 'dev',
           include,
+          exclude,
           benchmark: { include: [] },
           // `globalThis.gc` for the heap-delta assertions — workers do not
           // inherit the parent process's V8 flags, so pass it through here.
@@ -40,6 +54,7 @@ export default defineConfig({
         test: {
           name: 'prod',
           include,
+          exclude,
           benchmark: { include: [] },
         },
       },
@@ -53,6 +68,17 @@ export default defineConfig({
           include: [],
           benchmark: { include: ['bench/**/*.bench.ts'] },
         },
+      },
+      {
+        // apecs/solid over Solid's reactive graph, with and without assertions.
+        ...solidProject,
+        define: { __DEV__: 'true' },
+        test: { ...solidProject.test, name: 'solid' },
+      },
+      {
+        ...solidProject,
+        define: { __DEV__: 'false' },
+        test: { ...solidProject.test, name: 'solid-prod' },
       },
       {
         // Type-level tests only (`expectTypeOf` / `assertType`) — SPEC §11.

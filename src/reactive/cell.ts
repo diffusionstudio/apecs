@@ -140,7 +140,7 @@ abstract class CellBase<V> implements Cell<V>, Dirtyable {
 }
 
 /** A destroyed world holds nothing, and asking it in dev would throw (SPEC §5.5). */
-function alive(world: World, entity: Entity): boolean {
+export function alive(world: World, entity: Entity): boolean {
   return !world[$destroyed] && world.isAlive(entity);
 }
 
