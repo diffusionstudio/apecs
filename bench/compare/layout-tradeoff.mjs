@@ -69,23 +69,6 @@ console.log('\n== apecs: table storage (today) ==')
   })
 }
 
-console.log('\n== apecs: sparse storage (already available) ==')
-{
-  const P = new Trait({ x: f32(0) }, { storage: 'sparse' })
-  const w = new World({ maxEntities: N * 2 })
-  const live = new Float64Array(N)
-  for (let i = 0; i < N; i++) live[i] = w.spawn(P)
-  const acc = w.accessor(P.x)
-  const q = w.query(P)
-  await run('random access · accessor', () => {
-    for (let i = 0; i < N; i++) {
-      const e = live[order[i]]
-      acc.set(e, acc.get(e) + 1)
-    }
-  })
-  await run('iterate · each', () => q.each((p) => (p.x += 1)))
-}
-
 console.log('\n== bitECS: flat array indexed by entity id ==')
 {
   const w = bit.createWorld()

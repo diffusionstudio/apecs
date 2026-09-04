@@ -29,6 +29,7 @@
     "test:dev": "vitest run --project dev",
     "test:prod": "vitest run --project prod",
     "test:types": "vitest run --project types",
+    "test:api": "vitest run tests/api",
     "test:alloc": "node --expose-gc ./node_modules/vitest/vitest.mjs run --project dev",
     "bench": "npm run build && vitest bench --run",
     "typecheck": "tsc --noEmit",

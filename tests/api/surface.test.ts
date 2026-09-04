@@ -1,10 +1,16 @@
 /**
- * T7.6 — every entry of the SPEC §14 surface is exported, with the shape the
- * spec gives it, and nothing internal leaks out of the public entry point.
+ * SPEC §14 — every entry of the documented surface is exported, with the shape
+ * the spec gives it, and nothing internal leaks out of the public entry point.
+ *
+ * This file is the frozen list. Adding a name to it is an API addition;
+ * removing one is a breaking change.
  */
+import { readFileSync, readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, test } from 'vitest'
 
-import * as apecs from '../src/index'
+import * as apecs from '../../src/index'
 import {
   Added,
   Cascade,
@@ -28,7 +34,7 @@ import {
   u8,
   u16,
   u32,
-} from '../src/index'
+} from '../../src/index'
 
 const MARKERS = { f32, f64, i8, i16, i32, u8, u16, u32, bool, str, eid }
 
@@ -68,6 +74,10 @@ const WORLD_METHODS = [
 ] as const
 
 const QUERY_METHODS = ['each', 'chunks', 'entities', 'sortBy', 'dispose'] as const
+
+const SORTED_METHODS = ['each', 'entities', 'invalidate', 'rebuild', 'dispose'] as const
+
+const CHUNK_METHODS = ['get', 'column', 'entity', 'markChanged'] as const
 
 describe('exports (§14)', () => {
   test('the entry point exports exactly the documented surface', () => {
@@ -285,5 +295,84 @@ describe('observers and deferral (§14)', () => {
     expect(order).toEqual([1, 2])
 
     world.destroy()
+  })
+})
+
+describe('sorted surface (§6.3, §14)', () => {
+  const Position = new Trait({ x: f32(0) })
+
+  test('a sorted result carries the tier-1 surface plus the dirty controls', () => {
+    const world = new World()
+    world.spawn(Position({ x: 1 }))
+    const sorted = world.query(Position).sortBy(Position.x)
+
+    for (const name of SORTED_METHODS) {
+      expect(typeof (sorted as unknown as Record<string, unknown>)[name], name).toBe('function')
+    }
+    expect(typeof sorted.count).toBe('number')
+    expect(typeof sorted.isEmpty).toBe('boolean')
+    expect(typeof sorted.first).toBe('number')
+    expect(typeof sorted[Symbol.iterator]).toBe('function')
+    expect(['clean', 'resort', 'rebuild']).toContain(sorted.isDirty)
+
+    world.destroy()
+  })
+})
+
+describe('chunk surface (§6.6, §14)', () => {
+  const Position = new Trait({ x: f32(0) })
+
+  test('a chunk carries length, entities, and the four accessors', () => {
+    const world = new World()
+    world.spawn(Position)
+    let chunks = 0
+
+    for (const chunk of world.query(Position).chunks()) {
+      chunks++
+      expect(typeof chunk.length).toBe('number')
+      expect(chunk.entities).toBeInstanceOf(Float64Array)
+      for (const name of CHUNK_METHODS) {
+        expect(typeof (chunk as unknown as Record<string, unknown>)[name], name).toBe('function')
+      }
+    }
+
+    expect(chunks).toBe(1)
+    world.destroy()
+  })
+})
+
+describe('relation surface (§7, §14)', () => {
+  test('a relation is callable with a target, a wildcard, and a value', () => {
+    const ChildOf = new Relation(undefined, { exclusive: true })
+    const Likes = new Relation({ amount: 0 })
+    const world = new World()
+    const parent = world.spawn()
+    const child = world.spawn(ChildOf(parent), Likes(parent, { amount: 1 }))
+
+    expect(world.has(child, ChildOf(parent))).toBe(true)
+    expect(world.has(child, ChildOf('*'))).toBe(true)
+    expect(world.get(child, Likes(parent))).toEqual({ amount: 1 })
+    expect(typeof world.target(child, ChildOf)).toBe('number')
+    expect(Array.isArray(world.targets(child, Likes))).toBe(true)
+
+    world.destroy()
+  })
+})
+
+describe('the suite tests the public surface and nothing else', () => {
+  test('no file in tests/api imports anything but the entry point', () => {
+    const dir = fileURLToPath(new URL('.', import.meta.url))
+    const offenders: string[] = []
+
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith('.ts')) continue
+      const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+      for (const [, specifier] of source.matchAll(/from\s+'([^']+)'/g)) {
+        if (!specifier.startsWith('.')) continue
+        if (specifier !== '../../src/index') offenders.push(`${file}: ${specifier}`)
+      }
+    }
+
+    expect(offenders).toEqual([])
   })
 })

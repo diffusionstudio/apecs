@@ -41,34 +41,34 @@ actually changes state, and because becsy defers structural changes to the frame
 Every figure is the mitata average over a ≥1s CPU-time sample after an explicit warmup, and each
 cell is the **minimum across 3 full runs**. One pass is not trustworthy on a laptop: across runs some
 competitor cells moved by tens of percent while apecs's moved under 2%, which is background load
-rather than a property of any library (worst observed spread: frag_iter · becsy · ergonomic at 189%).
+rather than a property of any library (worst observed spread: mixed_query · koota · raw at 53%).
 
 ## Head-to-head
 
 Each library at its fastest correct idiom, in microseconds, with the multiple of the hand-written
 baseline in brackets. Lower is better; **bold** is the fastest real library on that row.
 
-| Benchmark       | hand-written | apecs             | bitECS         | koota          | becsy            |
-| --------------- | ------------ | ----------------- | -------------- | -------------- | ---------------- |
-| `packed_1`      | 4.0          | **4.7 (1.2×)**    | 5.7 (1.4×)     | 11.8 (2.9×)    | 19.2 (4.8×)      |
-| `packed_5`      | 4.9          | **4.9 (1.0×)**    | 7.6 (1.5×)     | 12.7 (2.6×)    | 22.5 (4.6×)      |
-| `simple_iter`   | 122          | 255 (2.1×)        | **162 (1.3×)** | 529 (4.3×)     | 3060 (25.1×)     |
-| `frag_iter`     | 106          | **94.3 (0.9×)**   | 117 (1.1×)     | 363 (3.4×)     | 380 (3.6×)       |
-| `entity_cycle`  | 247          | **14737 (59.7×)** | 38718 (156.9×) | 75842 (307.4×) | 134776 (546.2×)  |
-| `add_remove`    | 132          | 20484 (155.6×)    | 17698 (134.4×) | 26100 (198.2×) | **3658 (27.8×)** |
-| `mixed_query`   | 60.3         | **47.8 (0.8×)**   | 57.9 (1.0×)    | 180 (3.0×)     | 191 (3.2×)       |
-| `random_access` | 108          | 1493 (13.9×)      | **138 (1.3×)** | 221 (2.1×)     | 762 (7.1×)       |
+| What it does                                               | hand-written | apecs             | bitECS         | koota          | becsy            |
+| ---------------------------------------------------------- | ------------ | ----------------- | -------------- | -------------- | ---------------- |
+| **Iterate one trait**<br><sub>`packed_1`</sub>             | 4.0          | **4.7 (1.2×)**    | 5.7 (1.4×)     | 11.6 (2.9×)    | 19.2 (4.8×)      |
+| **Five systems in a row**<br><sub>`packed_5`</sub>         | 5.4          | **4.9 (0.9×)**    | 7.7 (1.4×)     | 12.8 (2.4×)    | 22.5 (4.2×)      |
+| **Move 100 000 entities**<br><sub>`simple_iter`</sub>      | 122          | 254 (2.1×)        | **162 (1.3×)** | 537 (4.4×)     | 3060 (25.1×)     |
+| **Iterate across 26 archetypes**<br><sub>`frag_iter`</sub> | 106          | **95.0 (0.9×)**   | 117 (1.1×)     | 359 (3.4×)     | 379 (3.6×)       |
+| **Spawn and despawn**<br><sub>`entity_cycle`</sub>         | 247          | **14623 (59.1×)** | 38785 (156.8×) | 77687 (314.0×) | 122575 (495.4×)  |
+| **Add and remove a trait**<br><sub>`add_remove`</sub>      | 132          | 20135 (152.8×)    | 18304 (138.9×) | 27666 (210.0×) | **3628 (27.5×)** |
+| **Query with exclusions**<br><sub>`mixed_query`</sub>      | 60.4         | **47.5 (0.8×)**   | 73.8 (1.2×)    | 181 (3.0×)     | 192 (3.2×)       |
+| **Look up by entity handle**<br><sub>`random_access`</sub> | 111          | 1480 (13.3×)      | **139 (1.2×)** | 222 (2.0×)     | 800 (7.2×)       |
 
 What each row is measuring:
 
-- **`packed_1`** — 5 000 entities, five traits each, one arithmetic pass over one trait. Best-case iteration. One archetype, no misses, nothing to skip.
-- **`packed_5`** — 1 000 entities, five traits each, five passes — one per trait. Per-query fixed cost. Five short scans expose setup overhead a long scan hides.
-- **`simple_iter`** — 100 000 entities, Position + Velocity, one integrate pass (SPEC §12.1). The real-world hot loop. This is the number that matters most.
-- **`frag_iter`** — 100 000 entities spread over 26 archetypes, iterate the one shared trait. Fragmentation cost. Archetype designs pay per archetype; sparse-set designs do not.
-- **`entity_cycle`** — Spawn 100 000 entities with two traits, then despawn all of them. Entity churn: id allocation, row insert, row release, free-list reuse.
-- **`add_remove`** — Add a trait to 100 000 existing entities, then remove it from all of them. Structural change. Archetype designs move a row; sparse-set designs flip a bit.
-- **`mixed_query`** — 26 archetypes; query the shared trait while excluding 13 of the 26 fragment traits. Negation. Archetype matching resolves it once at query build; per-entity designs re-test every entity.
-- **`random_access`** — Read and write one field on 100 000 entities in shuffled order, by entity handle. Per-entity access by handle. Only ~20% of the cost is the shuffled order — the rest is the accessor call itself, and it is there in sequential order too.
+- **Iterate one trait** (`packed_1`) — 5 000 entities, five traits each, one arithmetic pass over one trait. Best-case iteration. One archetype, no misses, nothing to skip.
+- **Five systems in a row** (`packed_5`) — 1 000 entities, five traits each, five passes — one per trait. Per-query fixed cost. Five short scans expose setup overhead a long scan hides.
+- **Move 100 000 entities** (`simple_iter`) — 100 000 entities, Position + Velocity, one integrate pass (SPEC §12.1). The real-world hot loop. This is the number that matters most.
+- **Iterate across 26 archetypes** (`frag_iter`) — 100 000 entities spread over 26 archetypes, iterate the one shared trait. Fragmentation cost. Archetype designs pay per archetype; sparse-set designs do not.
+- **Spawn and despawn** (`entity_cycle`) — Spawn 100 000 entities with two traits, then despawn all of them. Entity churn: id allocation, row insert, row release, free-list reuse.
+- **Add and remove a trait** (`add_remove`) — Add a trait to 100 000 existing entities, then remove it from all of them. Structural change. Archetype designs move a row; sparse-set designs flip a bit.
+- **Query with exclusions** (`mixed_query`) — 26 archetypes; query the shared trait while excluding 13 of the 26 fragment traits. Negation. Archetype matching resolves it once at query build; per-entity designs re-test every entity.
+- **Look up by entity handle** (`random_access`) — Read and write one field on 100 000 entities in shuffled order, by entity handle. Per-entity access by handle. Only ~20% of the cost is the shuffled order — the rest is the accessor call itself, and it is there in sequential order too.
 
 ## The two tiers
 
@@ -76,16 +76,16 @@ Most of these libraries offer an ergonomic idiom and a raw escape hatch, and the
 large enough that quoting one number per library hides the story. bitECS has no ergonomic tier — the
 raw arrays are the API. becsy has no raw tier — everything goes through a system.
 
-| Benchmark       | apecs `each` | apecs `chunks` / `accessor` | koota `updateEach` | koota `useStores` | bitECS | becsy  |
-| --------------- | ------------ | --------------------------- | ------------------ | ----------------- | ------ | ------ |
-| `packed_1`      | 9.1          | 4.7                         | 105                | 11.8              | 5.7    | 19.2   |
-| `packed_5`      | 33.0         | 4.9                         | 179                | 12.7              | 7.6    | 22.5   |
-| `simple_iter`   | 564          | 255                         | 6827               | 529               | 162    | 3060   |
-| `frag_iter`     | 188          | 94.3                        | 2239               | 363               | 117    | 380    |
-| `entity_cycle`  | 14737        | –                           | 75842              | –                 | 38718  | 134776 |
-| `add_remove`    | 20484        | –                           | 26100              | –                 | 17698  | 3658   |
-| `mixed_query`   | 94.1         | 47.8                        | 1133               | 180               | 57.9   | 191    |
-| `random_access` | 2805         | 1493                        | 12896              | 221               | 138    | 762    |
+| What it does                 | apecs `each` | apecs `chunks` / `accessor` | koota `updateEach` | koota `useStores` | bitECS | becsy  |
+| ---------------------------- | ------------ | --------------------------- | ------------------ | ----------------- | ------ | ------ |
+| Iterate one trait            | 9.2          | 4.7                         | 105                | 11.6              | 5.7    | 19.2   |
+| Five systems in a row        | 33.1         | 4.9                         | 179                | 12.8              | 7.7    | 22.5   |
+| Move 100 000 entities        | 566          | 254                         | 6804               | 537               | 162    | 3060   |
+| Iterate across 26 archetypes | 187          | 95.0                        | 2243               | 359               | 117    | 379    |
+| Spawn and despawn            | 14623        | –                           | 77687              | –                 | 38785  | 122575 |
+| Add and remove a trait       | 20135        | –                           | 27666              | –                 | 18304  | 3628   |
+| Query with exclusions        | 94.0         | 47.5                        | 1132               | 181               | 73.8   | 192    |
+| Look up by entity handle     | 2679         | 1480                        | 12134              | 222               | 139    | 800    |
 
 becsy's figures each include one `world.execute()` frame, which the others do not pay. Measured on
 its own that frame costs 0.4µs — negligible at these scales, so it is not distorting anything.
@@ -107,7 +107,7 @@ _smaller_ than 10 000. The check that the fit works: the hand-written baseline m
 | apecs        | 37.6         | 2.3× payload              |
 | bitECS       | 236.7        | 14.8× payload             |
 | koota        | 293.7        | 18.4× payload             |
-| becsy        | 155.1        | 9.7× payload              |
+| becsy        | 155.3        | 9.7× payload              |
 
 At 1 000 000 entities that is 38 MB for apecs against 237 MB for bitECS and 294 MB for koota.
 
@@ -123,7 +123,7 @@ process lets earlier shapes pollute the dispatch site, which manufactures the cl
 
 | distinct traits | 1    | 2    | 3    | 4    | 5    | 6    | 8    |
 | --------------- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
-| apecs           | 2.3  | 2.0  | 2.7  | 2.9  | 12.6 | 39.1 | 40.9 |
+| apecs           | 2.2  | 1.9  | 2.7  | 2.9  | 12.6 | 38.3 | 42.8 |
 | bitECS          | 1.6  | 1.5  | 1.5  | 1.5  | 1.5  | 1.5  | 1.6  |
 | koota           | 22.0 | 32.5 | 33.3 | 32.7 | 32.6 | 32.8 | 32.5 |
 | becsy           | 5.4  | 9.6  | 9.9  | 10.4 | 38.4 | 38.7 | 38.2 |
@@ -139,10 +139,10 @@ not shared." Per-trait cursor classes are precisely what makes the shared dispat
 The rule is aiming at the right target and the mechanism defeats it.
 
 **apecs's `chunks` tier is completely immune** and is the fastest thing in this report — flat at
-0.98/0.98/1.00/0.99 ns/entity through eight traits, against bitECS's ~1.5.
+1.06/0.98/0.99/0.99 ns/entity through eight traits, against bitECS's ~1.5.
 
 Per-call costs, for sizing systems that run over small archetypes
-(`node scaling.mjs`): `each` is 168 ns fixed + 1.76 ns/entity;
+(`node scaling.mjs`): `each` is 166 ns fixed + 1.78 ns/entity;
 `chunks` is 35 ns fixed + 0.95 ns/entity.
 
 ## Capability comparison: sorted queries
@@ -153,16 +153,16 @@ microseconds:
 
 |                                    | keys never change | 1% of keys change per frame |
 | ---------------------------------- | ----------------- | --------------------------- |
-| apecs `sortBy`                     | 3324              | 3070                        |
+| apecs `sortBy`                     | 3215              | 2920                        |
 | koota `sort()`                     | 26321             | 19016                       |
 | hand-written `Array.sort` + gather | 1453              | 1404                        |
 
 apecs is **6–8× faster than koota** here, which is the headline. But it is also **2.3× slower than
 simply sorting an id array by hand**, and that deserves attention rather than a victory lap:
 
-- Iterating the same query linearly costs 1.9 ns/entity. Iterating it sorted costs 38.9 ns/entity — **20×**.
+- Iterating the same query linearly costs 2 ns/entity. Iterating it sorted costs 38.5 ns/entity — **19×**.
 - A hand-written gather over an identical precomputed order costs 1.3 ns/entity, so the gap is not memory locality; it is ~37 ns/entity of overhead inside the sorted iteration driver.
-- `sorted.entities()` on a view whose keys were **never touched** costs 5.4 ns/entity, and that cost is flat at every world size (5.88 / 5.24 / 5.79 ns/entity at 1 k / 10 k / 100 k). It is O(n).
+- `sorted.entities()` on a view whose keys were **never touched** costs 5.4 ns/entity, and that cost is flat at every world size (5.77 / 5.34 / 5.24 ns/entity at 1 k / 10 k / 100 k). It is O(n).
 
 SPEC §12.1 budgets `sorted-static` at **zero work** — "one `lastWriteTick` compare per matching
 archetype." The measured cost is linear in entity count at every size, so that budget is not being met.
@@ -170,18 +170,18 @@ This is the clearest actionable gap the comparison turned up.
 
 ## What the accessor work changed
 
-`random_access` was the worst figure in the previous report — 5 971 µs, 43× behind bitECS. Two
+**Look up by entity handle** (`random_access`) was the worst figure in the previous report — 5 971 µs, 43× behind bitECS. Two
 changes landed since: a cleanup of `World#get`/`#set`, and `world.accessor(field)`, a handle that
 resolves a field once and keeps a table indexed by archetype id.
 
 |                                              | ns/entity | `random_access` |
 | -------------------------------------------- | --------- | --------------- |
 | `world.get` + `world.set`, before            | 51.9      | 5 971 µs        |
-| `world.get` + `world.set`, after the cleanup | 30.8      | 2805 µs         |
-| `world.accessor`                             | 14.8      | 1493 µs         |
+| `world.get` + `world.set`, after the cleanup | 26.5      | 2679 µs         |
+| `world.accessor`                             | 14.9      | 1480 µs         |
 
-That is **4.0× on the benchmark**, and it closes the gap to bitECS from 43× to 10.8×.
-It does **not** change the placing: apecs is still 4th of four here, behind bitECS (138 µs), koota (221 µs), becsy (762 µs).
+That is **4.0× on the benchmark**, and it closes the gap to bitECS from 43× to 10.7×.
+It does **not** change the placing: apecs is still 4th of four here, behind bitECS (139 µs), koota (222 µs), becsy (800 µs).
 And it cannot reach bitECS: two dependent lookups plus paged columns against one flat array load
 is inherent to an archetype design. The remaining question is whether the gap to koota — whose
 stores are id-indexed, so its raw tier is a single array index — is worth closing further.
@@ -189,12 +189,12 @@ stores are id-indexed, so its raw tier is a single array index — is worth clos
 **A correction to the estimate that motivated this.** The earlier prototype predicted 8.8 ns/entity.
 That figure compared a _fused_ read-modify-write against a two-call `get` + `set`, and used a
 one-entry cache that collapses to 27 ns once the world fragments — it was not a like-for-like
-target. Measured like for like, a bare dense-table prototype costs 12.7 ns, and 13.2 ns once it also
-does the change-tick stamping a correct `set` owes. The shipped accessor is 14.8 ns — within 2 ns
+target. Measured like for like, a bare dense-table prototype costs 12.7 ns, and 12.9 ns once it also
+does the change-tick stamping a correct `set` owes. The shipped accessor is 14.9 ns — within 2 ns
 of the practical ceiling for a design that does not degrade under fragmentation.
 
 The iteration path was not touched and did not move: `each` is still
-168 ns + 1.76 ns/entity, `chunks` still 35 ns + 0.95 ns/entity.
+166 ns + 1.78 ns/entity, `chunks` still 35 ns + 0.95 ns/entity.
 
 ## Reproducing
 

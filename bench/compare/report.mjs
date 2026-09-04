@@ -130,7 +130,7 @@ w(
 )
 w('baseline in brackets. Lower is better; **bold** is the fastest real library on that row.')
 w()
-w('| Benchmark | hand-written | apecs | bitECS | koota | becsy |')
+w('| What it does | hand-written | apecs | bitECS | koota | becsy |')
 w('| --- | --- | --- | --- | --- | --- |')
 for (const bench of Object.keys(BENCHMARKS)) {
   const base = best(bench, 'baseline')
@@ -145,13 +145,13 @@ for (const bench of Object.keys(BENCHMARKS)) {
       return c.lib === winner ? `**${text}**` : text
     })
     .join(' | ')
-  w(`| \`${bench}\` | ${fmt(base)} | ${body} |`)
+  w(`| **${BENCHMARKS[bench].label}**<br><sub>\`${bench}\`</sub> | ${fmt(base)} | ${body} |`)
 }
 w()
 w('What each row is measuring:')
 w()
 for (const [name, spec] of Object.entries(BENCHMARKS)) {
-  w(`- **\`${name}\`** — ${spec.what} ${spec.measures}`)
+  w(`- **${spec.label}** (\`${name}\`) — ${spec.what} ${spec.measures}`)
 }
 w()
 w('## The two tiers')
@@ -165,12 +165,12 @@ w(
 w('raw arrays are the API. becsy has no raw tier — everything goes through a system.')
 w()
 w(
-  '| Benchmark | apecs `each` | apecs `chunks` / `accessor` | koota `updateEach` | koota `useStores` | bitECS | becsy |',
+  '| What it does | apecs `each` | apecs `chunks` / `accessor` | koota `updateEach` | koota `useStores` | bitECS | becsy |',
 )
 w('| --- | --- | --- | --- | --- | --- | --- |')
 for (const bench of Object.keys(BENCHMARKS)) {
   w(
-    `| \`${bench}\` | ${fmt(tier(bench, 'apecs', 'ergonomic'))} | ${fmt(tier(bench, 'apecs', 'raw'))} | ` +
+    `| ${BENCHMARKS[bench].label} | ${fmt(tier(bench, 'apecs', 'ergonomic'))} | ${fmt(tier(bench, 'apecs', 'raw'))} | ` +
       `${fmt(tier(bench, 'koota', 'ergonomic'))} | ${fmt(tier(bench, 'koota', 'raw'))} | ` +
       `${fmt(tier(bench, 'bitecs', 'raw'))} | ${fmt(tier(bench, 'becsy', 'ergonomic'))} |`,
   )
@@ -327,7 +327,9 @@ w('This is the clearest actionable gap the comparison turned up.')
 w()
 w('## What the accessor work changed')
 w()
-w('`random_access` was the worst figure in the previous report — 5 971 µs, 43× behind bitECS. Two')
+w(
+  '**Look up by entity handle** (`random_access`) was the worst figure in the previous report — 5 971 µs, 43× behind bitECS. Two',
+)
 w(
   'changes landed since: a cleanup of `World#get`/`#set`, and `world.accessor(field)`, a handle that',
 )

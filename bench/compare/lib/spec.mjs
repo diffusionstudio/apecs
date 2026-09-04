@@ -13,50 +13,50 @@
 
 export const BENCHMARKS = {
   packed_1: {
-    label: 'packed_1',
+    label: 'Iterate one trait',
     params: { entities: 5_000 },
     what: '5 000 entities, five traits each, one arithmetic pass over one trait.',
     measures: 'Best-case iteration. One archetype, no misses, nothing to skip.',
   },
   packed_5: {
-    label: 'packed_5',
+    label: 'Five systems in a row',
     params: { entities: 1_000 },
     what: '1 000 entities, five traits each, five passes — one per trait.',
     measures: 'Per-query fixed cost. Five short scans expose setup overhead a long scan hides.',
   },
   simple_iter: {
-    label: 'simple_iter',
+    label: 'Move 100 000 entities',
     params: { entities: 100_000 },
     what: '100 000 entities, Position + Velocity, one integrate pass (SPEC §12.1).',
     measures: 'The real-world hot loop. This is the number that matters most.',
   },
   frag_iter: {
-    label: 'frag_iter',
+    label: 'Iterate across 26 archetypes',
     params: { entities: 100_000, archetypes: 26 },
     what: '100 000 entities spread over 26 archetypes, iterate the one shared trait.',
     measures: 'Fragmentation cost. Archetype designs pay per archetype; sparse-set designs do not.',
   },
   entity_cycle: {
-    label: 'entity_cycle',
+    label: 'Spawn and despawn',
     params: { entities: 100_000 },
     what: 'Spawn 100 000 entities with two traits, then despawn all of them.',
     measures: 'Entity churn: id allocation, row insert, row release, free-list reuse.',
   },
   add_remove: {
-    label: 'add_remove',
+    label: 'Add and remove a trait',
     params: { entities: 100_000 },
     what: 'Add a trait to 100 000 existing entities, then remove it from all of them.',
     measures: 'Structural change. Archetype designs move a row; sparse-set designs flip a bit.',
   },
   mixed_query: {
-    label: 'mixed_query',
+    label: 'Query with exclusions',
     params: { entities: 100_000, archetypes: 26, excluded: 13 },
     what: '26 archetypes; query the shared trait while excluding 13 of the 26 fragment traits.',
     measures:
       'Negation. Archetype matching resolves it once at query build; per-entity designs re-test every entity.',
   },
   random_access: {
-    label: 'random_access',
+    label: 'Look up by entity handle',
     params: { entities: 100_000 },
     what: 'Read and write one field on 100 000 entities in shuffled order, by entity handle.',
     measures:
