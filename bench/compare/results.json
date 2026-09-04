@@ -1,0 +1,990 @@
+{
+  "meta": {
+    "node": "v20.19.0",
+    "platform": "darwin arm64",
+    "cpus": "Apple M1",
+    "when": "2026-09-03T23:03:34.935Z",
+    "quick": false,
+    "minCpuTimeMs": 1000
+  },
+  "census": {
+    "baseline": {
+      "adapter": "baseline",
+      "packed_1": 5000,
+      "packed_5": 25000,
+      "simple_iter": 100000,
+      "frag_iter": 100000,
+      "mixed_query": 49998
+    },
+    "apecs": {
+      "adapter": "apecs",
+      "packed_1": 5000,
+      "packed_5": 25000,
+      "simple_iter": 100000,
+      "frag_iter": 100000,
+      "mixed_query": 49998
+    },
+    "bitecs": {
+      "adapter": "bitecs",
+      "packed_1": 5000,
+      "packed_5": 25000,
+      "simple_iter": 100000,
+      "frag_iter": 100000,
+      "mixed_query": 49998
+    },
+    "koota": {
+      "adapter": "koota",
+      "packed_1": 5000,
+      "packed_5": 25000,
+      "simple_iter": 100000,
+      "frag_iter": 100000,
+      "mixed_query": 49998
+    },
+    "becsy": {
+      "adapter": "becsy",
+      "packed_1": 5000,
+      "packed_5": 25000,
+      "simple_iter": 100000,
+      "frag_iter": 100000,
+      "mixed_query": 49998
+    }
+  },
+  "timings": {
+    "packed_1": {
+      "baseline": {
+        "adapter": "baseline",
+        "key": "baseline",
+        "version": "hand-written",
+        "notes": "Typed arrays and index arithmetic. No entity ids, no queries, no structural change.",
+        "benchmark": "packed_1",
+        "variants": {
+          "raw": {
+            "avg": 5339.942669157766,
+            "p50": 5208,
+            "p75": 5291,
+            "p99": 16291,
+            "min": 2583,
+            "samples": 186793
+          }
+        }
+      },
+      "apecs": {
+        "adapter": "apecs",
+        "key": "apecs",
+        "version": "0.1.0 (dist)",
+        "notes": "Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.",
+        "benchmark": "packed_1",
+        "variants": {
+          "ergonomic": {
+            "avg": 9421.994739879261,
+            "p50": 9308.2275390625,
+            "p75": 9528.361083984368,
+            "p99": 9757.090087890625,
+            "min": 9170.776367187493,
+            "samples": 22
+          },
+          "raw": {
+            "avg": 4741.579721914163,
+            "p50": 4708,
+            "p75": 4750,
+            "p99": 5125,
+            "min": 4500,
+            "samples": 210582
+          }
+        }
+      },
+      "bitecs": {
+        "adapter": "bitECS",
+        "key": "bitecs",
+        "version": "0.4.0",
+        "notes": "Sparse sets; components are user-owned typed arrays indexed by entity id. No archetypes, no ergonomic tier.",
+        "benchmark": "packed_1",
+        "variants": {
+          "raw": {
+            "avg": 5792.127120168586,
+            "p50": 5760.345458984375,
+            "p75": 5806.82373046875,
+            "p99": 6223.408935546875,
+            "min": 5678.192138671875,
+            "samples": 38
+          }
+        }
+      },
+      "koota": {
+        "adapter": "koota",
+        "key": "koota",
+        "version": "0.6.6",
+        "notes": "Archetype-ish query cache over SoA stores held in plain JS arrays (not typed arrays).",
+        "benchmark": "packed_1",
+        "variants": {
+          "ergonomic": {
+            "avg": 106561.67937219737,
+            "p50": 103209,
+            "p75": 104958,
+            "p99": 221208,
+            "min": 99834,
+            "samples": 9366
+          },
+          "raw": {
+            "avg": 11902.315755246935,
+            "p50": 11041,
+            "p75": 11416,
+            "p99": 18959,
+            "min": 10041,
+            "samples": 83039
+          }
+        }
+      },
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "packed_1",
+        "variants": {
+          "ergonomic": {
+            "avg": 19201.96310763889,
+            "p50": 19171.915771484375,
+            "p75": 19216.827392578096,
+            "p99": 19224.44677734375,
+            "min": 19105.804443359375,
+            "samples": 9
+          }
+        }
+      }
+    },
+    "packed_5": {
+      "baseline": {
+        "adapter": "baseline",
+        "key": "baseline",
+        "version": "hand-written",
+        "notes": "Typed arrays and index arithmetic. No entity ids, no queries, no structural change.",
+        "benchmark": "packed_5",
+        "variants": {
+          "raw": {
+            "avg": 4932.699245287025,
+            "p50": 5049.407958984404,
+            "p75": 5064.646484375,
+            "p99": 5098.307373046875,
+            "min": 4643.595458984375,
+            "samples": 46
+          }
+        }
+      },
+      "apecs": {
+        "adapter": "apecs",
+        "key": "apecs",
+        "version": "0.1.0 (dist)",
+        "notes": "Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.",
+        "benchmark": "packed_5",
+        "variants": {
+          "ergonomic": {
+            "avg": 33594.9467881272,
+            "p50": 32458,
+            "p75": 32834,
+            "p99": 58209,
+            "min": 31542,
+            "samples": 29749
+          },
+          "raw": {
+            "avg": 5025.714060222068,
+            "p50": 4917,
+            "p75": 5041,
+            "p99": 5583,
+            "min": 4708,
+            "samples": 198930
+          }
+        }
+      },
+      "bitecs": {
+        "adapter": "bitECS",
+        "key": "bitecs",
+        "version": "0.4.0",
+        "notes": "Sparse sets; components are user-owned typed arrays indexed by entity id. No archetypes, no ergonomic tier.",
+        "benchmark": "packed_5",
+        "variants": {
+          "raw": {
+            "avg": 7644.690002441406,
+            "p50": 7632.843017578125,
+            "p75": 7674.93701171875,
+            "p99": 7756.47998046875,
+            "min": 7570.79052734375,
+            "samples": 28
+          }
+        }
+      },
+      "koota": {
+        "adapter": "koota",
+        "key": "koota",
+        "version": "0.6.6",
+        "notes": "Archetype-ish query cache over SoA stores held in plain JS arrays (not typed arrays).",
+        "benchmark": "packed_5",
+        "variants": {
+          "ergonomic": {
+            "avg": 179996.84036796476,
+            "p50": 174791,
+            "p75": 178375,
+            "p99": 275834,
+            "min": 169541,
+            "samples": 5544
+          },
+          "raw": {
+            "avg": 12524.485429911785,
+            "p50": 11500,
+            "p75": 12250,
+            "p99": 22000,
+            "min": 10583,
+            "samples": 79272
+          }
+        }
+      },
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "packed_5",
+        "variants": {
+          "ergonomic": {
+            "avg": 29678.91490626012,
+            "p50": 29166,
+            "p75": 29500,
+            "p99": 35958,
+            "min": 28375,
+            "samples": 33657
+          }
+        }
+      }
+    },
+    "simple_iter": {
+      "baseline": {
+        "adapter": "baseline",
+        "key": "baseline",
+        "version": "hand-written",
+        "notes": "Typed arrays and index arithmetic. No entity ids, no queries, no structural change.",
+        "benchmark": "simple_iter",
+        "variants": {
+          "raw": {
+            "avg": 122347.50422742315,
+            "p50": 96292,
+            "p75": 98250,
+            "p99": 358083,
+            "min": 95250,
+            "samples": 8161
+          }
+        }
+      },
+      "apecs": {
+        "adapter": "apecs",
+        "key": "apecs",
+        "version": "0.1.0 (dist)",
+        "notes": "Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.",
+        "benchmark": "simple_iter",
+        "variants": {
+          "ergonomic": {
+            "avg": 569673.6579097658,
+            "p50": 564708,
+            "p75": 571334,
+            "p99": 619833,
+            "min": 550875,
+            "samples": 1751
+          },
+          "raw": {
+            "avg": 255769.69295774793,
+            "p50": 251625,
+            "p75": 254917,
+            "p99": 298250,
+            "min": 247750,
+            "samples": 3905
+          }
+        }
+      },
+      "bitecs": {
+        "adapter": "bitECS",
+        "key": "bitecs",
+        "version": "0.4.0",
+        "notes": "Sparse sets; components are user-owned typed arrays indexed by entity id. No archetypes, no ergonomic tier.",
+        "benchmark": "simple_iter",
+        "variants": {
+          "raw": {
+            "avg": 162261.4695468572,
+            "p50": 160334,
+            "p75": 162375,
+            "p99": 187667,
+            "min": 157667,
+            "samples": 6157
+          }
+        }
+      },
+      "koota": {
+        "adapter": "koota",
+        "key": "koota",
+        "version": "0.6.6",
+        "notes": "Archetype-ish query cache over SoA stores held in plain JS arrays (not typed arrays).",
+        "benchmark": "simple_iter",
+        "variants": {
+          "ergonomic": {
+            "avg": 6860238.43971631,
+            "p50": 6844791,
+            "p75": 6891542,
+            "p99": 7590458,
+            "min": 6506834,
+            "samples": 141
+          },
+          "raw": {
+            "avg": 544932.7680044001,
+            "p50": 495250,
+            "p75": 516334,
+            "p99": 989667,
+            "min": 416834,
+            "samples": 1819
+          }
+        }
+      },
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "simple_iter",
+        "variants": {
+          "ergonomic": {
+            "avg": 3127883.8037974676,
+            "p50": 3099875,
+            "p75": 3145000,
+            "p99": 3495959,
+            "min": 3053332.9999997616,
+            "samples": 316
+          }
+        }
+      }
+    },
+    "frag_iter": {
+      "baseline": {
+        "adapter": "baseline",
+        "key": "baseline",
+        "version": "hand-written",
+        "notes": "Typed arrays and index arithmetic. No entity ids, no queries, no structural change.",
+        "benchmark": "frag_iter",
+        "variants": {
+          "raw": {
+            "avg": 105663.58933671858,
+            "p50": 101708,
+            "p75": 112666,
+            "p99": 129084,
+            "min": 99167,
+            "samples": 9453
+          }
+        }
+      },
+      "apecs": {
+        "adapter": "apecs",
+        "key": "apecs",
+        "version": "0.1.0 (dist)",
+        "notes": "Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.",
+        "benchmark": "frag_iter",
+        "variants": {
+          "ergonomic": {
+            "avg": 189401.38346292442,
+            "p50": 186541,
+            "p75": 189416,
+            "p99": 229417,
+            "min": 183125,
+            "samples": 5273
+          },
+          "raw": {
+            "avg": 95064.42460279737,
+            "p50": 93709,
+            "p75": 95000,
+            "p99": 113500,
+            "min": 93250,
+            "samples": 10511
+          }
+        }
+      },
+      "bitecs": {
+        "adapter": "bitECS",
+        "key": "bitecs",
+        "version": "0.4.0",
+        "notes": "Sparse sets; components are user-owned typed arrays indexed by entity id. No archetypes, no ergonomic tier.",
+        "benchmark": "frag_iter",
+        "variants": {
+          "raw": {
+            "avg": 150143.66521084338,
+            "p50": 148042,
+            "p75": 150208,
+            "p99": 175792,
+            "min": 147375,
+            "samples": 6640
+          }
+        }
+      },
+      "koota": {
+        "adapter": "koota",
+        "key": "koota",
+        "version": "0.6.6",
+        "notes": "Archetype-ish query cache over SoA stores held in plain JS arrays (not typed arrays).",
+        "benchmark": "frag_iter",
+        "variants": {
+          "ergonomic": {
+            "avg": 2262628.3540229877,
+            "p50": 2202709,
+            "p75": 2315125,
+            "p99": 2622209,
+            "min": 2141042,
+            "samples": 435
+          },
+          "raw": {
+            "avg": 377157.2878845427,
+            "p50": 334667,
+            "p75": 352958,
+            "p99": 810792,
+            "min": 293459,
+            "samples": 2633
+          }
+        }
+      },
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "frag_iter",
+        "variants": {
+          "ergonomic": {
+            "avg": 395136.3041174073,
+            "p50": 374833,
+            "p75": 391124.9999997616,
+            "p99": 624917,
+            "min": 368916,
+            "samples": 2453
+          }
+        }
+      }
+    },
+    "entity_cycle": {
+      "baseline": {
+        "adapter": "baseline",
+        "key": "baseline",
+        "version": "hand-written",
+        "notes": "Typed arrays and index arithmetic. No entity ids, no queries, no structural change.",
+        "benchmark": "entity_cycle",
+        "variants": {
+          "raw": {
+            "avg": 252978.2856780093,
+            "p50": 247750,
+            "p75": 251625,
+            "p99": 322125,
+            "min": 241416,
+            "samples": 3938
+          }
+        }
+      },
+      "apecs": {
+        "adapter": "apecs",
+        "key": "apecs",
+        "version": "0.1.0 (dist)",
+        "notes": "Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.",
+        "benchmark": "entity_cycle",
+        "variants": {
+          "ergonomic": {
+            "avg": 15020562.158730164,
+            "p50": 14967459,
+            "p75": 15054750,
+            "p99": 15735333,
+            "min": 14811834,
+            "samples": 63
+          }
+        }
+      },
+      "bitecs": {
+        "adapter": "bitECS",
+        "key": "bitecs",
+        "version": "0.4.0",
+        "notes": "Sparse sets; components are user-owned typed arrays indexed by entity id. No archetypes, no ergonomic tier.",
+        "benchmark": "entity_cycle",
+        "variants": {
+          "raw": {
+            "avg": 41050004.1,
+            "p50": 39454208,
+            "p75": 43520750,
+            "p99": 45921875,
+            "min": 37420750,
+            "samples": 20
+          }
+        }
+      },
+      "koota": {
+        "adapter": "koota",
+        "key": "koota",
+        "version": "0.6.6",
+        "notes": "Archetype-ish query cache over SoA stores held in plain JS arrays (not typed arrays).",
+        "benchmark": "entity_cycle",
+        "variants": {
+          "ergonomic": {
+            "avg": 78693328.66666667,
+            "p50": 78852416,
+            "p75": 79311875,
+            "p99": 80141875,
+            "min": 76971500,
+            "samples": 9
+          }
+        }
+      },
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "entity_cycle",
+        "variants": {
+          "ergonomic": {
+            "avg": 122782878.41666667,
+            "p50": 121255583,
+            "p75": 122294458,
+            "p99": 125180958,
+            "min": 120393583,
+            "samples": 12
+          }
+        }
+      }
+    },
+    "add_remove": {
+      "baseline": {
+        "adapter": "baseline",
+        "key": "baseline",
+        "version": "hand-written",
+        "notes": "Typed arrays and index arithmetic. No entity ids, no queries, no structural change.",
+        "benchmark": "add_remove",
+        "variants": {
+          "raw": {
+            "avg": 132168.87544672407,
+            "p50": 127417,
+            "p75": 129333,
+            "p99": 233208,
+            "min": 127250,
+            "samples": 7555
+          }
+        }
+      },
+      "apecs": {
+        "adapter": "apecs",
+        "key": "apecs",
+        "version": "0.1.0 (dist)",
+        "notes": "Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.",
+        "benchmark": "add_remove",
+        "variants": {
+          "ergonomic": {
+            "avg": 20803635.904761903,
+            "p50": 19899208,
+            "p75": 20238042,
+            "p99": 26577417,
+            "min": 19722958,
+            "samples": 42
+          }
+        }
+      },
+      "bitecs": {
+        "adapter": "bitECS",
+        "key": "bitecs",
+        "version": "0.4.0",
+        "notes": "Sparse sets; components are user-owned typed arrays indexed by entity id. No archetypes, no ergonomic tier.",
+        "benchmark": "add_remove",
+        "variants": {
+          "raw": {
+            "avg": 18648365.673469387,
+            "p50": 17032292,
+            "p75": 21354292,
+            "p99": 25149958,
+            "min": 16154084,
+            "samples": 49
+          }
+        }
+      },
+      "koota": {
+        "adapter": "koota",
+        "key": "koota",
+        "version": "0.6.6",
+        "notes": "Archetype-ish query cache over SoA stores held in plain JS arrays (not typed arrays).",
+        "benchmark": "add_remove",
+        "variants": {
+          "ergonomic": {
+            "avg": 26987940.51515151,
+            "p50": 25532625,
+            "p75": 30006167,
+            "p99": 31660084,
+            "min": 24691583,
+            "samples": 33
+          }
+        }
+      },
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "add_remove",
+        "variants": {
+          "ergonomic": {
+            "avg": 3686712.394736847,
+            "p50": 3639042,
+            "p75": 3701000,
+            "p99": 4173875,
+            "min": 3597458,
+            "samples": 266
+          }
+        }
+      }
+    },
+    "mixed_query": {
+      "baseline": {
+        "adapter": "baseline",
+        "key": "baseline",
+        "version": "hand-written",
+        "notes": "Typed arrays and index arithmetic. No entity ids, no queries, no structural change.",
+        "benchmark": "mixed_query",
+        "variants": {
+          "raw": {
+            "avg": 62683.01991780599,
+            "p50": 60181.864501953125,
+            "p75": 61991.628173828125,
+            "p99": 66270.22290039062,
+            "min": 58461.110595703125,
+            "samples": 12
+          }
+        }
+      },
+      "apecs": {
+        "adapter": "apecs",
+        "key": "apecs",
+        "version": "0.1.0 (dist)",
+        "notes": "Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.",
+        "benchmark": "mixed_query",
+        "variants": {
+          "ergonomic": {
+            "avg": 96060.85226944233,
+            "p50": 93040.9999999404,
+            "p75": 95708,
+            "p99": 150667,
+            "min": 91457.9999999851,
+            "samples": 10377
+          },
+          "raw": {
+            "avg": 49228.35115559896,
+            "p50": 48187.551025390625,
+            "p75": 50346.140380859375,
+            "p99": 52432.159423828125,
+            "min": 47741.943359375,
+            "samples": 12
+          }
+        }
+      },
+      "bitecs": {
+        "adapter": "bitECS",
+        "key": "bitecs",
+        "version": "0.4.0",
+        "notes": "Sparse sets; components are user-owned typed arrays indexed by entity id. No archetypes, no ergonomic tier.",
+        "benchmark": "mixed_query",
+        "variants": {
+          "raw": {
+            "avg": 71000.54210001421,
+            "p50": 68833,
+            "p75": 72375,
+            "p99": 199291,
+            "min": 56833,
+            "samples": 14038
+          }
+        }
+      },
+      "koota": {
+        "adapter": "koota",
+        "key": "koota",
+        "version": "0.6.6",
+        "notes": "Archetype-ish query cache over SoA stores held in plain JS arrays (not typed arrays).",
+        "benchmark": "mixed_query",
+        "variants": {
+          "ergonomic": {
+            "avg": 1227057.7751256288,
+            "p50": 1125542,
+            "p75": 1204291,
+            "p99": 2820375,
+            "min": 1069791,
+            "samples": 796
+          },
+          "raw": {
+            "avg": 214343.16200262107,
+            "p50": 175083,
+            "p75": 189417,
+            "p99": 826917,
+            "min": 149917,
+            "samples": 4574
+          }
+        }
+      },
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "mixed_query",
+        "variants": {
+          "ergonomic": {
+            "avg": 213082.66445253917,
+            "p50": 193834,
+            "p75": 201958,
+            "p99": 661917,
+            "min": 189084,
+            "samples": 4667
+          }
+        }
+      }
+    },
+    "random_access": {
+      "baseline": {
+        "adapter": "baseline",
+        "key": "baseline",
+        "version": "hand-written",
+        "notes": "Typed arrays and index arithmetic. No entity ids, no queries, no structural change.",
+        "benchmark": "random_access",
+        "variants": {
+          "raw": {
+            "avg": 112096.22994832616,
+            "p50": 84500,
+            "p75": 88792,
+            "p99": 253916,
+            "min": 83708,
+            "samples": 8902
+          }
+        }
+      },
+      "apecs": {
+        "adapter": "apecs",
+        "key": "apecs",
+        "version": "0.1.0 (dist)",
+        "notes": "Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.",
+        "benchmark": "random_access",
+        "variants": {
+          "ergonomic": {
+            "avg": 5970989.207547168,
+            "p50": 5438167,
+            "p75": 6075750.000000119,
+            "p99": 11557667,
+            "min": 4941541,
+            "samples": 159
+          }
+        }
+      },
+      "bitecs": {
+        "adapter": "bitECS",
+        "key": "bitecs",
+        "version": "0.4.0",
+        "notes": "Sparse sets; components are user-owned typed arrays indexed by entity id. No archetypes, no ergonomic tier.",
+        "benchmark": "random_access",
+        "variants": {
+          "raw": {
+            "avg": 139431.7304092749,
+            "p50": 136625,
+            "p75": 138750,
+            "p99": 184209,
+            "min": 136250,
+            "samples": 7159
+          }
+        }
+      },
+      "koota": {
+        "adapter": "koota",
+        "key": "koota",
+        "version": "0.6.6",
+        "notes": "Archetype-ish query cache over SoA stores held in plain JS arrays (not typed arrays).",
+        "benchmark": "random_access",
+        "variants": {
+          "ergonomic": {
+            "avg": 12803669.027027026,
+            "p50": 12330917,
+            "p75": 12881959,
+            "p99": 16727249.99999988,
+            "min": 11131042,
+            "samples": 74
+          },
+          "raw": {
+            "avg": 226629.48488292925,
+            "p50": 221042,
+            "p75": 225958,
+            "p99": 306750,
+            "min": 218458,
+            "samples": 4399
+          }
+        }
+      },
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "random_access",
+        "variants": {
+          "ergonomic": {
+            "avg": 821766.8592715233,
+            "p50": 748917,
+            "p75": 779375,
+            "p99": 1881667,
+            "min": 719750,
+            "samples": 1208
+          }
+        }
+      }
+    },
+    "frame_overhead": {
+      "becsy": {
+        "adapter": "becsy",
+        "key": "becsy",
+        "version": "0.15.5 (perf build)",
+        "notes": "Archetype + typed columns, but scheduler-first: every figure includes one `world.execute()` frame.",
+        "benchmark": "frame_overhead",
+        "variants": {
+          "undefined": {
+            "avg": 398.6810619062761,
+            "p50": 395.30419921875,
+            "p75": 400.461669921875,
+            "p99": 450.6123046875,
+            "min": 379.852294921875,
+            "samples": 602
+          }
+        }
+      }
+    }
+  },
+  "memory": {
+    "baseline": {
+      "points": [
+        {
+          "n": 0,
+          "bytes": 4378839
+        },
+        {
+          "n": 25000,
+          "bytes": 4781623
+        },
+        {
+          "n": 50000,
+          "bytes": 5182015
+        },
+        {
+          "n": 100000,
+          "bytes": 5982015
+        },
+        {
+          "n": 200000,
+          "bytes": 7582015
+        }
+      ],
+      "perEntity": 16.010312,
+      "fixed": 4380528
+    },
+    "apecs": {
+      "points": [
+        {
+          "n": 0,
+          "bytes": 4958879
+        },
+        {
+          "n": 25000,
+          "bytes": 6093959
+        },
+        {
+          "n": 50000,
+          "bytes": 7016983
+        },
+        {
+          "n": 100000,
+          "bytes": 8864071
+        },
+        {
+          "n": 200000,
+          "bytes": 12557727
+        }
+      ],
+      "perEntity": 37.571168,
+      "fixed": 5080486.2
+    },
+    "bitecs": {
+      "points": [
+        {
+          "n": 0,
+          "bytes": 4428871
+        },
+        {
+          "n": 25000,
+          "bytes": 10534143
+        },
+        {
+          "n": 50000,
+          "bytes": 16067927
+        },
+        {
+          "n": 100000,
+          "bytes": 27866071
+        },
+        {
+          "n": 200000,
+          "bytes": 51845615
+        }
+      ],
+      "perEntity": 236.67132,
+      "fixed": 4398176.4
+    },
+    "koota": {
+      "points": [
+        {
+          "n": 0,
+          "bytes": 4474863
+        },
+        {
+          "n": 25000,
+          "bytes": 12147887
+        },
+        {
+          "n": 50000,
+          "bytes": 18377879
+        },
+        {
+          "n": 100000,
+          "bytes": 32970103
+        },
+        {
+          "n": 200000,
+          "bytes": 63446655
+        }
+      ],
+      "perEntity": 294.105136,
+      "fixed": 4225592.2
+    },
+    "becsy": {
+      "points": [
+        {
+          "n": 0,
+          "bytes": 5250055
+        },
+        {
+          "n": 25000,
+          "bytes": 8915607
+        },
+        {
+          "n": 50000,
+          "bytes": 13009955
+        },
+        {
+          "n": 100000,
+          "bytes": 20735895
+        },
+        {
+          "n": 200000,
+          "bytes": 36256019
+        }
+      ],
+      "perEntity": 155.424656,
+      "fixed": 5176657
+    }
+  },
+  "errors": []
+}

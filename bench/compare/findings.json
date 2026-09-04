@@ -1,0 +1,86 @@
+{
+  "note": "Supplementary measurements beyond the head-to-head suite. Each entry names the script that reproduces it. All on the same machine and Node version as results.json.",
+  "traitCountSweep": {
+    "script": "node cliff-cross.mjs <library> <k>   (one k per process, deliberately)",
+    "what": "ns per entity-visit, ergonomic tier: N=1000 entities carrying k distinct traits, one pass per trait.",
+    "ks": [1, 2, 3, 4, 5, 6, 8],
+    "apecs": [2.2, 1.92, 2.62, 2.87, 12.75, 38.24, 40.02],
+    "koota": [21.98, 32.46, 33.34, 32.67, 32.63, 32.83, 32.5],
+    "bitecs": [1.62, 1.52, 1.52, 1.53, 1.53, 1.54, 1.58],
+    "becsy": [5.44, 9.59, 9.92, 10.36, 38.43, 38.73, 38.2],
+    "apecsChunks": {
+      "script": "node chunks-cliff.mjs <k>",
+      "ks": [1, 2, 4, 5, 8],
+      "ns": [1.01, 0.98, 1.0, 0.99, 1.21]
+    }
+  },
+  "apecsCallCost": {
+    "script": "node scaling.mjs",
+    "what": "Fixed cost per call plus marginal cost per entity, single-trait query.",
+    "each": {
+      "fixedNs": 165,
+      "perEntityNs": 1.77
+    },
+    "chunks": {
+      "fixedNs": 35,
+      "perEntityNs": 0.93
+    }
+  },
+  "sortedQueries": {
+    "script": "node capability.mjs <library> <static|drift>",
+    "what": "100 000 entities iterated in sorted order every frame, microseconds.",
+    "apecs": {
+      "static": 3320.7,
+      "drift": 3033.9
+    },
+    "koota": {
+      "static": 26321.0,
+      "drift": 19015.7
+    },
+    "handwritten": {
+      "static": 1453.0,
+      "drift": 1404.1
+    }
+  },
+  "sortedIsolation": {
+    "script": "node sorted-isolate.mjs",
+    "what": "Same query, same data: linear vs sorted iteration, ns per entity.",
+    "plainEach": 2.0,
+    "sortedEach": 38.6,
+    "handWrittenGatherOverFixedOrder": 1.3,
+    "sortedEntitiesOnly": 5.4
+  },
+  "sortedStaticIsLinear": {
+    "script": "node sorted-scaling.mjs",
+    "what": "sorted.entities() on a view whose keys were never touched. SPEC 12.1 budgets zero work; cost is flat per entity at every size, i.e. O(n).",
+    "nsPerEntity": {
+      "1000": 5.78,
+      "10000": 5.57,
+      "100000": 5.43
+    }
+  },
+  "becsyChecks": {
+    "coalescing": {
+      "script": "node verify-becsy-coalesce.mjs",
+      "what": "becsy defers structural changes to the frame boundary, so in-frame add+remove could have been collapsed to nothing. It is not.",
+      "inFrameUs": 3588.8,
+      "alternatingFramesUs": 3665.0
+    },
+    "structuralWorkIsReal": {
+      "script": "node verify-becsy-structural.mjs",
+      "observedAcrossFrames": [0, 10000, 10000, 0]
+    },
+    "silentTruncation": {
+      "what": "becsy's perf build has assertions compiled out. On default maxShapeChangesPerFrame it silently creates only some of the entities requested and every query built on them comes back short, with no error. Caught by census.mjs; fixed by sizing the limits explicitly in the adapter."
+    }
+  },
+  "randomAccessBreakdown": {
+    "script": "node random-access-breakdown.mjs",
+    "what": "apecs random_access split apart, ns per entity. The shuffled order contributes only 22% -- the dominant cost is the per-entity accessor call itself, not address resolution or cache misses.",
+    "getAndSetShuffled": 51.9,
+    "getAndSetSequential": 40.5,
+    "getOnlyShuffled": 23.9,
+    "setOnlyShuffled": 18.4,
+    "sameWritesViaEach": 1.9
+  }
+}

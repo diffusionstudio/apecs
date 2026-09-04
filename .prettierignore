@@ -2,3 +2,7 @@ dist
 coverage
 node_modules
 package-lock.json
+
+# Competitor benchmarks: own package, own lockfile, own node_modules.
+bench/compare/node_modules
+bench/compare/results.json

@@ -35,7 +35,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "bench:ci": "vitest bench --run --outputJson=bench/results.json && node scripts/bench-report.mjs bench/results.json",
-    "check:bundle": "node scripts/check-bundle.mjs"
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "bench:compare": "cd bench/compare && node run.mjs && node report.mjs",
+    "bench:compare:verify": "cd bench/compare && node verify.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
