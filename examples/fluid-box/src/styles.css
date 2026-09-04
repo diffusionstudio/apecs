@@ -1,0 +1,248 @@
+:root {
+  --bg: #0b0b0d;
+  --panel: rgba(12, 12, 16, 0.66);
+  --line: rgba(255, 255, 255, 0.09);
+  --text: rgba(238, 238, 246, 0.94);
+  --muted: rgba(205, 208, 225, 0.58);
+  --accent: #8ee7ff;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#gpu {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.panel {
+  pointer-events: auto;
+  position: absolute;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  padding: 14px 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+.brand {
+  top: 18px;
+  left: 18px;
+  width: 300px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.brand h1 span {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.brand .claim {
+  margin: 6px 0 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.big {
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.big small {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 6px;
+  letter-spacing: 0;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 5px;
+  column-gap: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.stats dt {
+  color: var(--muted);
+  margin: 0;
+}
+
+.stats dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.controls {
+  bottom: 18px;
+  left: 18px;
+  width: 300px;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+button {
+  pointer-events: auto;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  flex: 1;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+label.slider {
+  display: grid;
+  grid-template-columns: 64px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+label.slider output {
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.section {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin: 12px 0 8px;
+}
+
+.section:first-child {
+  margin-top: 0;
+}
+
+.hint {
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.hint kbd {
+  font-family: var(--mono);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin: 0 2px;
+}
+
+.fatal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--muted);
+  line-height: 1.6;
+  padding: 24px;
+}
+
+.fatal b {
+  color: var(--text);
+  display: block;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+@media (max-width: 720px) {
+  .brand,
+  .controls {
+    width: calc(100% - 36px);
+  }
+  .controls,
+  .hint {
+    display: none;
+  }
+}
