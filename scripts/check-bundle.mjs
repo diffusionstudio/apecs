@@ -66,6 +66,13 @@ const ENTRIES = {
     'useTarget',
     'useParent',
     'useChildren',
+    'useAccessor',
+    'useEntity',
+    'useOnAdd',
+    'useOnRemove',
+    'useOnChange',
+    'useOnEnter',
+    'useOnExit',
   ],
   'solid/index.js': [
     'WorldProvider',

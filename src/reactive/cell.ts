@@ -44,9 +44,9 @@ import { schedulerOf, type Dirtyable, type Scheduler } from './scheduler';
  * listener always reads the value it was woken for.
  */
 export interface Cell<V> {
-  value(): V;
+  value: () => V;
   /** Returns its own unsubscribe. The last one releases the world observers. */
-  subscribe(listener: () => void): () => void;
+  subscribe: (listener: () => void) => () => void;
 }
 
 /** Nothing committed yet; `refresh` never produces it, so any read replaces it. */
@@ -67,13 +67,9 @@ const NOOP = (): void => {};
 class ConstantCell<V> implements Cell<V> {
   public constructor(private readonly held: V) {}
 
-  public value(): V {
-    return this.held;
-  }
+  public readonly value = (): V => this.held;
 
-  public subscribe(): () => void {
-    return NOOP;
-  }
+  public readonly subscribe = (): (() => void) => NOOP;
 }
 
 const UNDEFINED_CELL = new ConstantCell(undefined);
@@ -85,14 +81,15 @@ abstract class CellBase<V> implements Cell<V>, Dirtyable {
   protected committed: V | Unset = UNSET;
   private readonly listeners: (() => void)[] = [];
 
-  public value(): V {
+  // Bound as fields: React hands them to `useSyncExternalStore` unbound (§C.5).
+  public readonly value = (): V => {
     if (this.committed === UNSET) {
       this.refresh();
     }
     return this.committed as V;
-  }
+  };
 
-  public subscribe(listener: () => void): () => void {
+  public readonly subscribe = (listener: () => void): (() => void) => {
     const listeners = this.listeners;
     if (listeners.length === 0) {
       // Attached first, so a write since an unsubscribed `value()` cannot slip by.
@@ -111,7 +108,7 @@ abstract class CellBase<V> implements Cell<V>, Dirtyable {
         this.detach();
       }
     };
-  }
+  };
 
   public flush(): void {
     if (this.listeners.length !== 0 && this.refresh()) {

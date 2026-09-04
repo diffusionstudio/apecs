@@ -3,9 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 const include = ['tests/**/*.test.ts'];
-/** The Solid binding's tests run in their own projects, below. */
+/** The bindings' tests run in their own jsdom projects, below (SPEC-CLIENTS §C.9). */
+const react = ['tests/react/**/*.test.ts'];
 const solid = ['tests/solid/**/*.test.ts'];
-const exclude = ['**/node_modules/**', ...solid];
+const exclude = ['**/node_modules/**', ...react, ...solid];
+
+const reactProject = {
+  test: { include: react, environment: 'jsdom', benchmark: { include: [] } },
+};
 
 /**
  * `solid-js` ships conditional exports and Node's resolver picks the server
@@ -68,6 +73,17 @@ export default defineConfig({
           include: [],
           benchmark: { include: ['bench/**/*.bench.ts'] },
         },
+      },
+      {
+        // apecs/react over React's renderer, with and without assertions.
+        ...reactProject,
+        define: { __DEV__: 'true' },
+        test: { ...reactProject.test, name: 'react' },
+      },
+      {
+        ...reactProject,
+        define: { __DEV__: 'false' },
+        test: { ...reactProject.test, name: 'react-prod' },
       },
       {
         // apecs/solid over Solid's reactive graph, with and without assertions.
