@@ -30,7 +30,7 @@ framework's reactive model without dragging the DOM along at simulation rate.
 - Iteration APIs in components. `each` and `chunks` are for systems (§6.5, §6.6).
   UI that needs them belongs in an imperative hook (§C.7), not in render.
 - Writing through reactivity. There is no two-way binding. Writes go through
-  `world.set` or an accessor (§C.6.2).
+  `world.set` or an accessor (§C.5.3, §C.6.1).
 
 ---
 
@@ -112,6 +112,8 @@ default is `Object.is`.
 | target / parent     | `Entity \| undefined`    | `Object.is` — entities are packed numbers (§4.1)      |
 | query / children    | `readonly Entity[]`      | length, then element-wise `Object.is`                 |
 | query first         | `Entity \| undefined`    | `Object.is`                                           |
+| sorted query        | `readonly Entity[]`      | length, then element-wise `Object.is` — order counts  |
+| sorted query first  | `Entity \| undefined`    | `Object.is`                                           |
 
 Struct traits are the only case that needs care, because `world.get` returns a
 fresh copy per call (§4.4) and a fresh object is never `Object.is`-equal to the
@@ -196,8 +198,8 @@ world registry
    trait is one map lookup, and a miss returns immediately. A write to an
    unobserved trait is unchanged from core.
 2. **One cell per `(world, entity, subject)`**, where the subject is a field, a
-   trait, a relation, or a `QueryResult`. Cells are interned and reference
-   counted: ten components calling `useField(player, Position.x)` share one cell,
+   trait, a relation, a `QueryResult`, or a `SortedQueryResult` (§C.3.6). Cells
+   are interned and reference counted: ten components calling `useField(player, Position.x)` share one cell,
    so a write recomputes once, gates once, and then notifies ten listeners — not
    ten recomputes of the same value. Query cells intern on the `QueryResult`
    identity, which core already hashes from the term list (§6.2), so two hooks
@@ -227,6 +229,68 @@ that fans out manually costs one tracked trait, where twenty `useField` hooks on
 twenty entities also cost one — but a hook on twenty _different_ traits costs
 twenty.
 
+### C.3.6 Sorted cells
+
+A UI list wants deterministic order, which §C.4.4 says a plain query cell does not
+have. Core already computes one: `sortBy` returns a memoised `SortedQueryResult`
+keyed on `(query signature, field, direction)` (§6.7). A sorted cell is a query
+cell over that view, and differs from the unsorted pair in exactly one respect —
+what wakes it.
+
+**The wake set.** An unsorted query cell's committed value can only change when
+the match set does, so `onEnter` / `onExit` are sufficient. A sorted cell's value
+also changes when a sort key moves an entity past a neighbour, which crosses no
+query boundary and fires neither. Its `QueryWatch` (§C.3.4) therefore carries a
+third subscription:
+
+| write                                  | fires                | level it can cause |
+| -------------------------------------- | -------------------- | ------------------ |
+| spawn, despawn, add / remove a trait   | `onEnter` / `onExit` | `rebuild`          |
+| `world.set` / accessor on the sort key | `onChange`           | `resort`           |
+| `chunk.markChanged` on the sort key    | nothing (§8.1)       | `resort` — missed  |
+
+The third row is core's chunk hazard (§6.7) one level up, and is the only write
+the binding cannot see; §C.11.1 carries it.
+
+The `onChange` costs no tracking that was not already being paid: `sortBy` marks
+its key trait tracked for the whole world (§6.7), so unlike every other hook in
+§C.3.5 a sorted hook imposes nothing on systems that the sort itself did not
+already impose.
+
+**The cell does not consult `isDirty`.** That was the concern that kept sorted
+queries out of v1, and consulting the dirty levels per flush turns out to be both
+unnecessary and wrong. Wrong, because the levels describe work owed to the _next
+reader_, not change owed to _this cell_: a system iterating the same sorted query
+between the write and the flush sorts the view and clears the level, and a cell
+that early-outs on `'clean'` would miss the reorder it was woken for.
+Unnecessary, because the view is memoised — a cell that simply reads the ordered
+result pays core's sort when it is owed and nothing when a system already paid it.
+
+So a sorted cell recomputes like any other: woken by an observer, it reads the
+view's ordered buffer and gates element-wise against the committed array
+(§C.3.2). It reads the buffer directly rather than through `entities()`, which
+slices a defensive copy per call (§6.7), and allocates a replacement array only
+when the order actually differs.
+
+That gate is goal 1 (§C.1.1) applied to order rather than to value, and it is
+worth stating for what it suppresses: **a key change that does not change the
+order commits nothing.** A sprite whose `SortIndex` moves from 3 to 4 without
+crossing a neighbour dirties the cell, re-sorts the view, finds the same
+permutation, and re-renders nothing.
+
+**Cost.** One O(n) comparison pass per flush per sorted cell that was woken,
+bounded by the display rate (§C.3.3) and paid only while something is writing the
+key — on top of core's resort, which §6.7 keeps at O(n) for a nearly-sorted array.
+That is affordable for a list a person can look at. It is not a reason to render
+ten thousand rows; a query that large belongs in a system, and a sorted one in
+`each` (§6.7).
+
+**The comparator overload is not offered.** `sortBy(compare)` has no key column,
+so it is unconditionally `resort`-dirty (§6.7) _and_ gives the binding no trait to
+observe — no wake source, and no way to build one. A comparator that closes over a
+camera or a clock is exactly the case §C.7 exists for: subscribe imperatively,
+call `sortBy(compare)` and `invalidate()` yourself, and drive the DOM from a ref.
+
 ---
 
 ## C.4 Semantics common to both bindings
@@ -254,10 +318,14 @@ twenty.
 4. **Query order is not stable and carries no meaning.** Key React lists by entity,
    not by index. A query cell recomputes only when `onEnter` / `onExit` fires
    (§8.2), so an entity changing archetype without leaving the match set does not
-   reorder the committed array — but nothing guarantees that.
-5. **Terms need no memoisation.** `useQuery(Position, Not(Frozen))` builds a
-   fresh array every render; core hashes the term list and returns the cached
-   result, so this is not a re-subscription.
+   reorder the committed array — but nothing guarantees that. A list whose order
+   is part of what it shows wants `useSortedQuery` (§C.3.6), which guarantees it.
+5. **Terms need no memoisation, and neither does a sort.** `useQuery(...)` builds
+   a fresh term array every render; core hashes the term list and returns the
+   cached result, so this is not a re-subscription. `sortBy` is the
+   same kind of lookup on top of it (§6.7), so the sorted hooks resolve to a
+   stable `SortedQueryResult` — and therefore to a shared cell — without the
+   binding hashing anything either.
 6. **Reads are shared and must be treated as read-only.** Cells are interned
    (§C.3.4), so two components reading the same trait of the same entity receive
    the _same object_, not two copies. Mutating what a hook returns corrupts every
@@ -314,6 +382,8 @@ useTag(entity, tag: TraitLike): boolean
 useTag(tag: TraitLike): boolean                                // world trait
 useQuery(...terms: Term[]): readonly Entity[]
 useQueryFirst(...terms: Term[]): Entity | undefined
+useSortedQuery(terms: Term[], field: Field, direction?: 'asc' | 'desc'): readonly Entity[]
+useSortedQueryFirst(terms: Term[], field: Field, direction?: 'asc' | 'desc'): Entity | undefined
 useTarget(entity, relation: Relation): Entity | undefined
 useParent(entity, relation: Relation): Entity | undefined
 useChildren(entity, relation: Relation): readonly Entity[]
@@ -334,6 +404,16 @@ useChildren(entity, relation: Relation): readonly Entity[]
 - `useQueryFirst` is `query.first`, gated on `onEnter` / `onExit`. It is a distinct
   hook rather than `useQuery(...)[0]` because it commits an `Entity`, not an array,
   so it never re-renders on a membership change that leaves the first entity alone.
+- `useSortedQuery` is `world.query(...terms).sortBy(field, direction)` behind the
+  cell in §C.3.6, and is the only hook whose order means anything (§C.4.4). It
+  takes its terms as an **array** rather than a rest parameter, because the sort
+  key follows them; this is the shape §C.7 already uses for the same reason.
+  `direction` defaults to `'asc'`, matching core. The comparator overload of
+  `sortBy` has no hook (§C.3.6).
+- `useSortedQueryFirst` earns its place more clearly than `useQueryFirst` does: on
+  a sorted query the first entity is the extremum — the leader, the nearest, the
+  topmost layer — and it commits one `Entity`, so every reshuffle behind the
+  winner is free.
 - `useTarget` reads an exclusive relation and maps core's `NULL_ENTITY` to
   `undefined`; dev builds assert exclusivity, as `world.target` does (§7.3).
 - `useParent` is `useTarget` under the name the hierarchy case reads better in.
@@ -383,26 +463,28 @@ state, `use*` only for context, and bare `on*` for owner-bound subscriptions. Th
 mapping is one-to-one: mirroring core's `world.get` overloads instead of naming a
 singleton hook leaves nothing that collides with Solid's own exports.
 
-| React           | Solid              |
-| --------------- | ------------------ |
-| `WorldProvider` | `WorldProvider`    |
-| `useWorld`      | `useWorld`         |
-| `useField`      | `createField`      |
-| `useTrait`      | `createTrait`      |
-| `useHas`        | `createHas`        |
-| `useTag`        | `createTag`        |
-| `useQuery`      | `createQuery`      |
-| `useQueryFirst` | `createQueryFirst` |
-| `useTarget`     | `createTarget`     |
-| `useParent`     | `createParent`     |
-| `useChildren`   | `createChildren`   |
-| `useAccessor`   | `createAccessor`   |
-| `useEntity`     | `createEntity`     |
-| `useOnAdd`      | `onAdd`            |
-| `useOnRemove`   | `onRemove`         |
-| `useOnChange`   | `onChange`         |
-| `useOnEnter`    | `onEnter`          |
-| `useOnExit`     | `onExit`           |
+| React                 | Solid                    |
+| --------------------- | ------------------------ |
+| `WorldProvider`       | `WorldProvider`          |
+| `useWorld`            | `useWorld`               |
+| `useField`            | `createField`            |
+| `useTrait`            | `createTrait`            |
+| `useHas`              | `createHas`              |
+| `useTag`              | `createTag`              |
+| `useQuery`            | `createQuery`            |
+| `useQueryFirst`       | `createQueryFirst`       |
+| `useSortedQuery`      | `createSortedQuery`      |
+| `useSortedQueryFirst` | `createSortedQueryFirst` |
+| `useTarget`           | `createTarget`           |
+| `useParent`           | `createParent`           |
+| `useChildren`         | `createChildren`         |
+| `useAccessor`         | `createAccessor`         |
+| `useEntity`           | `createEntity`           |
+| `useOnAdd`            | `onAdd`                  |
+| `useOnRemove`         | `onRemove`               |
+| `useOnChange`         | `onChange`               |
+| `useOnEnter`          | `onEnter`                |
+| `useOnExit`           | `onExit`                 |
 
 `WorldProvider` is built with `createComponent` and a lazy `children` getter —
 what the Solid JSX transform emits — so the binding needs no JSX build step.
@@ -437,7 +519,8 @@ to leave React out of the loop entirely.
 ## C.8 TypeScript
 
 - Both bindings need `TraitLike` from core; it is exported from `apecs` as a type
-  (§14) for exactly this reason.
+  (§14) for exactly this reason. The sorted hooks need `Field` too, which core
+  already exports as a type.
 - `useTag` / `createTag` want a `TagTrait` constraint — a trait whose schema kind
   is `'tag'` (§3.1). Core exposes the kind at runtime, and dev builds assert on it;
   expressing it in the type system requires a helper alias in core. Until that
@@ -464,6 +547,12 @@ Two vitest projects beside the existing `dev`, `prod`, `types` and `bench`
 - The value gate needs dedicated coverage: **writing the same value must produce
   zero notifications**, on each cell kind in §C.3.2. That assertion is the
   specification of goal 1 and should fail loudly if the gate regresses.
+- Sorted cells need the order-preserving case as well as the value one: a key
+  write that re-sorts to the same permutation must notify zero times, one that
+  moves an entity past a neighbour must notify once, and a spawn into the match
+  set must land the new entity in its sorted position (§C.3.6). One test must
+  sort the view from a system between the write and the flush, which is the case
+  that rules out gating on `isDirty`.
 
 `check:bundle` asserts each entry's export list and that `react` / `solid-js` are
 imported rather than inlined (§12.2).
@@ -476,14 +565,16 @@ imported rather than inlined (§12.2).
 // apecs/react
 WorldProvider  useWorld
 useField  useTrait  useHas  useTag        // each with an entity-less world-trait overload
-useQuery  useQueryFirst  useTarget  useParent  useChildren
+useQuery  useQueryFirst  useSortedQuery  useSortedQueryFirst
+useTarget  useParent  useChildren
 useAccessor  useEntity
 useOnAdd  useOnRemove  useOnChange  useOnEnter  useOnExit
 
 // apecs/solid
 WorldProvider  useWorld
 createField  createTrait  createHas  createTag  // ditto
-createQuery  createQueryFirst  createTarget  createParent  createChildren
+createQuery  createQueryFirst  createSortedQuery  createSortedQueryFirst
+createTarget  createParent  createChildren
 createAccessor  createEntity
 onAdd  onRemove  onChange  onEnter  onExit
 
@@ -495,10 +586,16 @@ onAdd  onRemove  onChange  onEnter  onExit
 
 ## C.11 Open questions
 
-1. **Sorted queries.** `sortBy` gives deterministic order, which UI lists usually
-   want, but `SortedQueryResult` carries its own dirty levels (§6.7) that a cell
-   would have to consult per flush rather than gating on enter/exit alone. Left
-   out of v1; `useQuery` order is explicitly unstable until it lands.
+1. **Sort keys written through chunks do not wake a sorted cell.**
+   `chunk.markChanged` bumps the column's `lastWriteTick` — enough for core's view
+   to know it owes a resort (§6.7) — but fires no observer (§8.1), so the cell in
+   §C.3.6 is never dirtied and the list stays in its old order until something else
+   moves it. Dev's §6.6 warning catches a _missing_ `markChanged`, not this. Until
+   it is closed, sort keys behind a mounted list should be written through
+   `world.set` or an accessor; a chunk system that must write them is the §C.7
+   case. The real fix is the same `world.onStep(fn)` floated in open question 2:
+   given it, a sorted cell would consult its view once per step and every write
+   path would converge, chunk writes and comparators alike.
 2. **Writes that change nothing still cost a frame.** The gate suppresses the
    notification but not the flush that discovers there is nothing to notify: a
    trait written every step with an unchanging value schedules one rAF and one
