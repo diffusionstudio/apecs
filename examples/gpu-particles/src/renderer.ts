@@ -1,8 +1,3 @@
-/**
- * WebGPU renderer. The ECS columns are uploaded page by page into per-column
- * vertex buffers — SoA on the CPU, SoA on the GPU — and every archetype group
- * becomes one instanced draw.
- */
 import { PARTICLE, SCREEN } from './shaders';
 
 export const COLUMNS = 5; // x, y, vx, vy, life

@@ -1,9 +1,3 @@
-/**
- * The simulation: every particle is an entity, every frame is a chunk walk.
- *
- * Nothing here knows about the GPU. The renderer reads the same column pages
- * this file writes, which is the whole point of the demo.
- */
 import { Not, Trait, World, eid, f32 } from 'apecs';
 import type { Entity } from 'apecs';
 

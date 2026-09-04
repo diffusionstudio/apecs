@@ -1,7 +1,3 @@
-/**
- * The overlay: every number comes from the world through `apecs/react`. Stats
- * and physics are world traits; the inspector follows the selected entity.
- */
 import { useField, useHas, useWorld, WorldProvider } from 'apecs/react';
 import type { Entity } from 'apecs';
 import type { ReactElement } from 'react';

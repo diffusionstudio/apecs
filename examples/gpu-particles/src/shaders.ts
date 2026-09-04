@@ -1,5 +1,3 @@
-/** WGSL for the four passes: trail fade, particles, pick, composite. */
-
 export const PARTICLE = /* wgsl */ `
 struct Uniforms {
   aspect: f32,
