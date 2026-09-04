@@ -46,7 +46,8 @@
     "bench:ci": "npm run build && vitest bench --run --outputJson=bench/results.json && node scripts/bench-report.mjs bench/results.json",
     "check:bundle": "node scripts/check-bundle.mjs",
     "bench:compare": "cd bench/compare && node run.mjs && node report.mjs",
-    "bench:compare:verify": "cd bench/compare && node verify.mjs"
+    "bench:compare:verify": "cd bench/compare && node verify.mjs",
+    "example:gpu": "npm --prefix examples/gpu-particles run dev"
   },
   "peerDependencies": {
     "react": ">=18",
