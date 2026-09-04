@@ -6,7 +6,6 @@ import { $archetypes, $entities, $id, entityId } from '../src/internal'
 
 const Position = new Trait({ x: f32(0), y: f32(0) })
 const Name = new Trait({ value: str('') })
-const Cooldown = new Trait({ left: 0 }, { storage: 'sparse' })
 const IsActive = new Trait()
 const Time = new Trait({ delta: 0 })
 
@@ -46,19 +45,6 @@ describe('clear (§5.5)', () => {
     expect(world.has(Time)).toBe(true)
     expect(world.get(Position.x)).toBe(3)
     expect(world.query(Position).count).toBe(1)
-
-    world.destroy()
-  })
-
-  test('sparse storage is cleared with the entity', () => {
-    const world = new World()
-    const e = world.spawn(Position, Cooldown({ left: 5 }))
-
-    world.clear()
-    const again = world.spawn(Position)
-
-    expect(entityId(again)).toBe(entityId(e))
-    expect(world.has(again, Cooldown)).toBe(false)
 
     world.destroy()
   })
@@ -164,22 +150,6 @@ describe('compact (§10.2)', () => {
       expect(archetype.entities.length).toBe(pages)
       for (const column of archetype.columns) expect(column.pages.length).toBe(pages)
     }
-
-    world.destroy()
-  })
-
-  test('sparse stores are compacted too', () => {
-    const world = new World({ pageSize: PAGE })
-    const batch = world.spawnMany(PAGE * 2 + 1, Cooldown)
-    world.despawnMany(batch)
-    const survivor = world.spawn(Cooldown({ left: 2 }))
-
-    world.compact()
-
-    expect(world.get(survivor, Cooldown.left)).toBe(2)
-    world.spawnMany(PAGE * 2, Cooldown)
-    expect(world.query(Cooldown).count).toBe(0) // sparse traits are not queryable by archetype
-    expect(world.has(survivor, Cooldown)).toBe(true)
 
     world.destroy()
   })

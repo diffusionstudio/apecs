@@ -106,15 +106,11 @@ Implementation note: `new Trait(...)` returns a function with the `Trait` protot
 
 ```ts
 new Trait(schema, {
-  storage: 'table' | 'sparse', // default 'table'
   track: boolean, // force change-tick allocation, default false (auto)
 })
 ```
 
-- **`table`** (default) — the trait's columns live inside each archetype. Dense, linear iteration. Adding or removing the trait moves the entity's row between archetypes.
-- **`sparse`** — the trait lives in one world-global sparse set outside the archetype graph. Adding or removing it does **not** move the row and does **not** create an archetype. Iteration costs one indirection per access.
-
-Choose `sparse` for traits with very high add/remove churn, very large payloads, or a huge fan-out of distinct combinations. Everything else stays `table`.
+A trait's columns live inside each archetype that holds it: dense, linear iteration, and adding or removing the trait moves the entity's row between archetypes (§4.2).
 
 ---
 
@@ -185,7 +181,7 @@ world.set(e, Position.x, 5)
 
 ### 4.5 Accessors — resolved per-entity access
 
-`world.get` / `world.set` resolve the subject on every call: field → trait → storage mode → archetype → column → page. An **accessor** does that resolution once and keeps it, so per-entity access from outside a query costs two indirections instead of a lookup chain. It is the per-entity counterpart of `chunks` (§6.6): the escape hatch for pathfinding, physics callbacks, networking — anything that addresses entities by handle in an order no query can provide.
+`world.get` / `world.set` resolve the subject on every call: field → trait → archetype → column → page. An **accessor** does that resolution once and keeps it, so per-entity access from outside a query costs two indirections instead of a lookup chain. It is the per-entity counterpart of `chunks` (§6.6): the escape hatch for pathfinding, physics callbacks, networking — anything that addresses entities by handle in an order no query can provide.
 
 ```ts
 const px = world.accessor(Position.x) // hoist it, like a query
@@ -204,7 +200,6 @@ interface Accessor<V> {
 - Accessors are **memoised per world and field**: `world.accessor(Position.x)` returns the same object every time, so calling it inline allocates nothing after the first call.
 - The accessor follows the entity: through archetype moves, id recycling, `compact()`, `clear()`, and the pages a later spawn appends. It never returns a stale value.
 - `get` and `set` allocate nothing. Dev builds check liveness, world membership, and that the entity holds the trait; production builds check nothing, like `chunks`.
-- A sparse trait's accessor (§3.5) resolves to its store — one indirection, the same as `world.get`.
 
 ---
 
@@ -580,7 +575,7 @@ apecs uses **two storage strategies, chosen by cardinality**:
 
 **Non-exclusive relations use pair ids in the archetype mask.** Each distinct `(relation, target)` interns to a trait-like local id and participates in matching normally. This is correct when target cardinality is low (`Likes`, `Owes`, `TargetedBy`) and is the only way to express "matches entities related to _these two specific_ targets" as a single archetype match.
 
-Dev builds warn when a non-exclusive relation exceeds a configurable distinct-pair threshold, suggesting `exclusive: true` or `storage: 'sparse'`.
+Dev builds warn when a non-exclusive relation exceeds a configurable distinct-pair threshold, suggesting `exclusive: true`.
 
 ### 7.5 Target lifecycle
 

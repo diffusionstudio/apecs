@@ -66,7 +66,6 @@ Stage gate: **0-B complete.**
 | **T1.6** | `get` copy semantics, `get` with field, `get` with `out`, `set` partial write, field `set` (§4.4, §3.3)                                                              |
 | **T1.7** | World entity is id 1, world-trait overloads resolve unambiguously, `world.entity` (§5.4)                                                                             |
 | **T1.8** | `spawnMany` / `addMany` / `removeMany` / `despawnMany`, single transition per batch, query as batch input (§4.3)                                                     |
-| **T1.9** | `storage: 'sparse'` traits — no archetype created, no row move on add/remove, values readable through the same API (§3.5)                                            |
 
 ### 1-B [COMPLETED] — Implementation
 
@@ -80,7 +79,6 @@ Stage gate: **0-B complete.**
 | **I1.6** | `get` / `set`             | T1.6, I1.5             |
 | **I1.7** | World-target overloads    | T1.7, I1.6             |
 | **I1.8** | Bulk operations           | T1.8, I1.5             |
-| **I1.9** | Sparse trait storage      | T1.9, I1.5             |
 
 ---
 
@@ -251,18 +249,18 @@ Stage gate: **7-B complete.**
 
 ### 8-A [COMPLETED] — Tests
 
-| ID       | Test task                                                                                                                                                                                                  |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **T8.1** | `world.accessor` — get/set parity with `world.get`/`set` for every field kind, nested fields, AoS traits, sparse traits and exclusive-relation fields; memoised per field; dev rejection of tags, struct traits and non-exclusive relations (§4.5, §3.3) |
-| **T8.2** | Accessor follows the entity — archetype moves, id recycling into another archetype, `compact()`, `clear()`, pages appended after resolution, a world that gains archetypes later (§4.5, §10.2)             |
-| **T8.3** | `set` through an accessor stamps ticks, fires `onChange`, is seen by `Changed()`; dev liveness / world / has-trait assertions, absent in prod (§4.5, §8.1, §8.3, §12.2)                                   |
-| **T8.4** | Alloc + surface: zero heap delta per pass after warmup; `accessor` on the prototype; `Accessor<V>` typed from the field, struct traits rejected at the type level (§4.5, §11, §12.2, §14)                 |
+| ID       | Test task                                                                                                                                                                                                                                 |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **T8.1** | `world.accessor` — get/set parity with `world.get`/`set` for every field kind, nested fields, AoS traits and exclusive-relation fields; memoised per field; dev rejection of tags, struct traits and non-exclusive relations (§4.5, §3.3) |
+| **T8.2** | Accessor follows the entity — archetype moves, id recycling into another archetype, `compact()`, `clear()`, pages appended after resolution, a world that gains archetypes later (§4.5, §10.2)                                            |
+| **T8.3** | `set` through an accessor stamps ticks, fires `onChange`, is seen by `Changed()`; dev liveness / world / has-trait assertions, absent in prod (§4.5, §8.1, §8.3, §12.2)                                                                   |
+| **T8.4** | Alloc + surface: zero heap delta per pass after warmup; `accessor` on the prototype; `Accessor<V>` typed from the field, struct traits rejected at the type level (§4.5, §11, §12.2, §14)                                                 |
 
 ### 8-B [COMPLETED] — Implementation
 
-| ID       | Impl task                                                                         | →                |
-| -------- | --------------------------------------------------------------------------------- | ---------------- |
-| **I8.1** | `Accessor` — dense per-archetype column table, sparse-store variant, memoisation | T8.1, T8.2, T8.3 |
+| ID       | Impl task                                                                               | →                |
+| -------- | --------------------------------------------------------------------------------------- | ---------------- |
+| **I8.1** | `Accessor` — dense per-archetype column table, memoisation                              | T8.1, T8.2, T8.3 |
 | **I8.2** | Public type + export, `random-access` benchmark and CI budget, compare adapter raw tier | T8.4, I8.1       |
 
 ---
@@ -275,7 +273,7 @@ Inside phase A every task is independent — write them all in parallel. Inside 
 chains that matter are:
 
 - Stage 0: `I0.2 → I0.3 → I0.4 → I0.5`; `I0.1 → I0.8`; `I0.2 → I0.7`
-- Stage 1: `I1.1 → I1.2 → I1.3 → I1.4 → I1.5 → I1.6 → I1.7`, with `I1.8`/`I1.9` branching off `I1.5`
+- Stage 1: `I1.1 → I1.2 → I1.3 → I1.4 → I1.5 → I1.6 → I1.7`, with `I1.8` branching off `I1.5`
 - Stage 2: `I2.1 → I2.2 → I2.3 → I2.4 → I2.5 → I2.7`, with `I2.6` branching off `I2.3`
 - Stage 3: `I3.1 → I3.2 → I3.4 → I3.6`, with `I3.3` and `I3.5` branching off
 - Stage 5: strictly linear `I5.1 → I5.2 → I5.3 → I5.4`

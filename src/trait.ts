@@ -10,7 +10,6 @@ import {
   $options,
   $plan,
   $schema,
-  $sparse,
   $target,
   $trait,
   $value,
@@ -18,8 +17,6 @@ import {
 import type { Init, TraitFields } from './types'
 
 export interface TraitOptions {
-  /** `'table'` keeps columns inside the archetype; `'sparse'` keeps them outside it (SPEC §3.5). */
-  storage?: 'table' | 'sparse'
   /** Force change-tick allocation instead of waiting for a subscriber (SPEC §8.3). */
   track?: boolean
 }
@@ -46,8 +43,6 @@ export interface TraitBase<S extends Schema = any> {
   readonly [$options]: Readonly<Required<TraitOptions>>
   /** Nested key tree over the flattened fields, for `get` / `set` (SPEC §4.4). */
   readonly [$plan]: Plan
-  /** `storage === 'sparse'`, hoisted off the options for the per-entity paths. */
-  readonly [$sparse]: boolean
 }
 
 export type Trait<S extends Schema = any> = TraitBase<S> & TraitFields<S>
@@ -66,11 +61,10 @@ interface TraitState {
   [$schema]: Schema
   [$options]: Required<TraitOptions> & Record<string, unknown>
   [$plan]: Plan
-  [$sparse]: boolean
   [$make](a: unknown, b: unknown): TraitInstance
 }
 
-const DEFAULT_OPTIONS = { storage: 'table', track: false } as const
+const DEFAULT_OPTIONS = { track: false } as const
 
 /** Ids start at 1 so a zeroed slot never names a trait. */
 let nextTraitId = 1
@@ -104,7 +98,6 @@ export class TraitImpl {
   declare readonly [$schema]: Schema
   declare readonly [$options]: Required<TraitOptions> & Record<string, unknown>
   declare readonly [$plan]: Plan
-  declare readonly [$sparse]: boolean
 
   public constructor(schema?: Schema, options?: TraitOptions, defaults?: object) {
     const { kind, fields } = normalizeSchema(schema)
@@ -120,12 +113,6 @@ export class TraitImpl {
     self[$schema] = schema
     self[$plan] = buildPlan(fields)
     self[$options] = { ...DEFAULT_OPTIONS, ...defaults, ...options }
-    self[$sparse] = self[$options].storage === 'sparse'
-
-    if (__DEV__) {
-      const { storage } = self[$options]
-      assert(storage === 'table' || storage === 'sparse', `unknown storage mode "${storage}"`)
-    }
 
     for (const field of fields) {
       field[$trait] = self as unknown as Trait

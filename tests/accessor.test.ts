@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { Changed, Relation, Trait, World, bool, eid, f32, i8, str, u16 } from '../src/index'
 import type { Entity } from '../src/index'
-import { resetWarnOnce } from '../src/internal'
+import { $id, packEntity, resetWarnOnce } from '../src/internal'
 import { CAN_MEASURE_HEAP, bytesPerPass } from './support/heap'
 import { columnOf, rowOf } from './support/columns'
 
@@ -23,8 +23,6 @@ const Kinds = new Trait({
 })
 const Transform = new Trait({ pos: { x: 0, y: 0 }, scale: 1 })
 const Mesh = new Trait(() => ({ n: 0 }))
-const Cooldown = new Trait({ left: 0 }, { storage: 'sparse' })
-const SparseMesh = new Trait(() => ({ n: 0 }), { storage: 'sparse' })
 const Level = new Trait({ value: 0 }, { track: true })
 const IsActive = new Trait()
 const Attached = new Relation({ offset: 0 }, { exclusive: true })
@@ -132,41 +130,6 @@ describe('get / set parity with world.get / world.set (§4.5, §3.3)', () => {
 
     expect(meshes.get(e)).toBe(replacement)
     expect(world.get(e, Mesh)).toBe(replacement)
-
-    world.destroy()
-  })
-
-  test('a sparse field resolves to its store, before and after the store exists', () => {
-    const world = new World()
-    const left = world.accessor(Cooldown.left)
-    const a = world.spawn(Position, Cooldown({ left: 3 }))
-    const b = world.spawn(Position)
-
-    expect(left.get(a)).toBe(3)
-
-    left.set(a, 2)
-
-    expect(world.get(a, Cooldown.left)).toBe(2)
-
-    world.add(b, Cooldown)
-
-    expect(left.get(b)).toBe(0)
-    expect(left.get(a)).toBe(2)
-
-    world.remove(a, Cooldown)
-
-    expect(left.get(b)).toBe(0)
-
-    world.destroy()
-  })
-
-  test('a sparse AoS trait is addressable too', () => {
-    const world = new World()
-    const e = world.spawn(SparseMesh)
-    const meshes = world.accessor(SparseMesh)
-
-    expect(meshes.get(e)).toEqual({ n: 0 })
-    expect(meshes.get(e)).toBe(world.get(e, SparseMesh))
 
     world.destroy()
   })
@@ -316,14 +279,12 @@ describe('the accessor follows the entity (§4.5, §10.2)', () => {
   test('through clear()', () => {
     const world = new World()
     const px = world.accessor(Position.x)
-    const left = world.accessor(Cooldown.left)
-    world.spawn(Position({ x: 1 }), Cooldown({ left: 1 }))
+    world.spawn(Position({ x: 1 }))
 
     world.clear()
-    const e = world.spawn(Position({ x: 2 }), Cooldown({ left: 2 }))
+    const e = world.spawn(Position({ x: 2 }))
 
     expect(px.get(e)).toBe(2)
-    expect(left.get(e)).toBe(2)
 
     world.destroy()
   })
@@ -464,7 +425,7 @@ describe('set is a real write (§4.5, §8.1, §8.3)', () => {
     expect(() => px.get(bare)).toThrowError(/does not have that trait/)
     expect(() => px.set(bare, 1)).toThrowError(/does not have that trait/)
     expect(() => px.get(foreign)).toThrowError(/world/)
-    expect(() => px.get(0 as Entity)).toThrowError(/not alive/)
+    expect(() => px.get(packEntity(0, 0, world[$id]))).toThrowError(/not alive/)
 
     world.despawn(e)
 

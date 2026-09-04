@@ -17,7 +17,6 @@ import {
   $index,
   $options,
   $plan,
-  $sparse,
   $target,
   $term,
   $terms,
@@ -564,7 +563,6 @@ export class QueryCache {
           by.array !== null,
           `sortBy() needs a numeric key and "${by.key}" is not one — use the comparator overload`,
         )
-        assert(!trait[$sparse], 'sortBy() cannot key on a sparse trait')
       }
       this.track(trait)
       if (!maskHas(parent[$plan].all, this.#traits.register(trait)))

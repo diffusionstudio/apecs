@@ -56,3 +56,6 @@ Recorded in `findings.json`, each with the script that reproduces it:
 | `proto-accessor.mjs`                   | Prototype: how much of `random_access` is recoverable, and by which change.                |
 | `proto-accessor-frag.mjs <k>`          | Prototype: does the accessor cache survive archetype fragmentation?                        |
 | `proto-accessor-gap.mjs`               | Why the shipped accessor lands at 14.8 ns where the prototype claimed 8.8.                 |
+| `layout-physics.mjs`                   | Is a flat id-indexed array actually faster than archetype indirection?                     |
+| `accessor-floor.mjs`                   | Where the accessor's 14.8 ns goes, step by step.                                           |
+| `layout-tradeoff.mjs`                  | Random access vs iteration on each layout, fresh and after churn.                          |

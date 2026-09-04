@@ -65,11 +65,7 @@ export class Binding {
     this.args = new Array(this.slots.length + 1).fill(null)
   }
 
-  /**
-   * Points every slot at this archetype's columns. Returns false when a
-   * required trait is not stored here at all — a sparse trait carries no mask
-   * bit, so no archetype can satisfy it (SPEC §3.5).
-   */
+  /** Points every slot at this archetype's columns; false when a required trait is absent. */
   public bind(archetype: Archetype): boolean {
     const { slots, args, cursors, cursorColumns, boxedArg, boxedColumn } = this
     cursors.length = 0

@@ -5,8 +5,7 @@ import { entityId, type Entity } from './entity'
 import type { EntityIndex } from './entity-index'
 import { isRelation } from './relation'
 import type { Field } from './schema'
-import type { SparseStore } from './sparse'
-import { $fields, $id, $index, $kind, $options, $sparse, $trait } from './symbols'
+import { $fields, $id, $index, $kind, $options, $trait } from './symbols'
 import type { Ticks } from './ticks'
 import type { Trait } from './trait'
 
@@ -24,7 +23,6 @@ export interface AccessorHost {
   /** `onChange` subscriptions; a write consults only the size before calling `wrote`. */
   readonly changed: { readonly size: number }
   wrote(entity: Entity, id: number, trait: Trait): void
-  store(trait: Trait): SparseStore
   /** Dev only. */
   assertAlive(entity: Entity, id: number): void
 }
@@ -47,7 +45,7 @@ export function createAccessor(host: AccessorHost, field: Field): Accessor<unkno
       'a non-exclusive relation is read and written through a target: world.get(e, Likes(target))',
     )
   }
-  return trait[$sparse] ? new SparseAccessor(host, field) : new TableAccessor(host, field)
+  return new TableAccessor(host, field)
 }
 
 /**
@@ -107,47 +105,5 @@ class TableAccessor implements Accessor<unknown> {
     const columns = this.archetypes[at].columnsOf.get(this.trait[$id])
     if (__DEV__) assert(columns !== undefined, 'this entity does not have that trait')
     return (this.table[at] = columns![this.slot])
-  }
-}
-
-/** A sparse trait has one store per world, so the column is fixed and only the slot moves (SPEC §3.5). */
-class SparseAccessor implements Accessor<unknown> {
-  private readonly store: SparseStore
-  private readonly column: Column
-  private readonly ticks: Ticks
-  private readonly host: AccessorHost
-  private readonly trait: Trait
-  private readonly bool: boolean
-
-  public constructor(host: AccessorHost, field: Field) {
-    const trait = field[$trait]
-    this.store = host.store(trait)
-    this.column = this.store.columns[field[$index]]
-    this.ticks = host.ticks
-    this.host = host
-    this.trait = trait
-    this.bool = field.kind === 'bool'
-  }
-
-  public get(entity: Entity): unknown {
-    const id = entityId(entity)
-    if (__DEV__) this.host.assertAlive(entity, id)
-    const row = this.store.slotOf(id)
-    if (__DEV__) assert(row >= 0, 'this entity does not have that trait')
-    const column = this.column
-    const raw = (column.pages[row >>> column.shift] as unknown[])[row & column.mask]
-    return this.bool ? raw !== 0 : raw
-  }
-
-  public set(entity: Entity, value: unknown): void {
-    const id = entityId(entity)
-    if (__DEV__) this.host.assertAlive(entity, id)
-    const row = this.store.slotOf(id)
-    if (__DEV__) assert(row >= 0, 'this entity does not have that trait')
-    const column = this.column
-    ;(column.pages[row >>> column.shift] as unknown[])[row & column.mask] = value
-    column.stamp(row, this.ticks.tick)
-    const host = this.host
-    if (host.changed.size !== 0) host.wrote(entity, id, this.trait)
   }
 }

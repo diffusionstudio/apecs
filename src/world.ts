@@ -32,11 +32,9 @@ import {
   type Relation,
 } from './relation'
 import type { Field, Schema } from './schema'
-import { SparseStore } from './sparse'
 import {
   $archetypes,
   $entities,
-  $fields,
   $id,
   $index,
   $kind,
@@ -45,7 +43,6 @@ import {
   $queries,
   $relation,
   $relations,
-  $sparse,
   $target,
   $traits,
   $trait,
@@ -161,8 +158,6 @@ export class World {
   #freeCount = 0
   #nextId = FIRST_ENTITY_ID
 
-  #stores = new Map<number, SparseStore>()
-  #storeList: SparseStore[] = []
   #accessors = new Map<Field, Accessor<unknown>>()
   #host: AccessorHost | null = null
   #destroyed = false
@@ -232,13 +227,10 @@ export class World {
     for (let i = 0; i < items.length; i++) {
       const trait = traitOf(items[i])
       const value = valueOf(items[i])
-      if (trait[$sparse]) this.#store(trait).add(id, value, tick)
-      else {
-        const columns = archetype.columnsOf.get(trait[$id])
-        initTrait(columns, row, trait, value, tick)
-        if (isExclusive(trait))
-          this.#link(trait, entity, id, columns!, row, targetOf(items[i]) as Entity, tick)
-      }
+      const columns = archetype.columnsOf.get(trait[$id])
+      initTrait(columns, row, trait, value, tick)
+      if (isExclusive(trait))
+        this.#link(trait, entity, id, columns!, row, targetOf(items[i]) as Entity, tick)
     }
 
     // Events fire only after every value is in place (SPEC §8.1).
@@ -273,18 +265,13 @@ export class World {
     for (let i = 0; i < items.length; i++) {
       const trait = traitOf(items[i])
       const value = valueOf(items[i])
-      if (trait[$sparse]) {
-        const store = this.#store(trait)
-        for (let k = 0; k < n; k++) store.add(entityId(batch[k]), value, tick)
-      } else {
-        const columns = archetype.columnsOf.get(trait[$id])
-        for (let k = 0; k < n; k++) initTrait(columns, first + k, trait, value, tick)
-        if (isExclusive(trait)) {
-          const target = targetOf(items[i]) as Entity
-          for (let k = 0; k < n; k++) {
-            const entity = batch[k] as Entity
-            this.#link(trait, entity, entityId(entity), columns!, first + k, target, tick)
-          }
+      const columns = archetype.columnsOf.get(trait[$id])
+      for (let k = 0; k < n; k++) initTrait(columns, first + k, trait, value, tick)
+      if (isExclusive(trait)) {
+        const target = targetOf(items[i]) as Entity
+        for (let k = 0; k < n; k++) {
+          const entity = batch[k] as Entity
+          this.#link(trait, entity, entityId(entity), columns!, first + k, target, tick)
         }
       }
     }
@@ -420,7 +407,6 @@ export class World {
         ticks: this.#ticks,
         changed: this.#onChange,
         wrote: (entity, id, trait) => this.#emitChange(entity, id, trait),
-        store: (trait) => this.#store(trait),
         assertAlive: (entity, id) => this.#assertAlive(entity, id),
       }
       this.#accessors.set(field, (accessor = createAccessor(this.#host, field)))
@@ -439,8 +425,8 @@ export class World {
       assert(this.#hasTrait(id, trait), 'this entity does not have that trait')
     }
 
-    const row = this.#rowOf(trait, id)
-    const columns = this.#columnsAt(trait, id, row)
+    const row = this[$entities].rows[id]
+    const columns = this.#columnsOf(trait, id)
     if (columns !== undefined) {
       const tick = this.#ticks.tick
       for (let i = 0; i < columns.length; i++) columns[i].stamp(row, tick)
@@ -564,8 +550,6 @@ export class World {
     if (__DEV__) this.#assertNotDestroyed()
     const archetypes = this[$archetypes].list
     for (let i = 0; i < archetypes.length; i++) archetypes[i].compact()
-    const stores = this.#storeList
-    for (let i = 0; i < stores.length; i++) stores[i].compact()
   }
 
   public destroy(): void {
@@ -577,8 +561,6 @@ export class World {
     this[$queries].clear()
     this[$archetypes].dispose()
     this[$relations].clear()
-    this.#stores.clear()
-    this.#storeList.length = 0
     this.#accessors.clear()
     this.#onAdd.clear()
     this.#onRemove.clear()
@@ -648,10 +630,6 @@ export class World {
   }
 
   #hasTrait(id: number, trait: Trait): boolean {
-    if (trait[$sparse]) {
-      const store = this.#stores.get(trait[$id])
-      return store !== undefined && store.slotOf(id) >= 0
-    }
     const local = this[$traits].localId(trait)
     return local >= 0 && maskHas(this.#archetypeOf(id).mask, local)
   }
@@ -776,35 +754,18 @@ export class World {
     return boundary
   }
 
-  /** The row `id` occupies for `trait`, then the columns holding it: two calls rather than one allocation. */
-  #rowOf(trait: Trait, id: number): number {
-    return trait[$sparse] ? this.#sparseRow(trait, id) : this[$entities].rows[id]
-  }
-
-  /** `undefined` when `id` lacks the trait; `row` is what `#rowOf` returned. */
-  #columnsAt(trait: Trait, id: number, row: number): Column[] | undefined {
-    return trait[$sparse]
-      ? this.#sparseColumns(trait, row)
-      : this.#archetypeOf(id).columnsOf.get(trait[$id])
-  }
-
-  #sparseRow(trait: Trait, id: number): number {
-    const store = this.#stores.get(trait[$id])
-    return store === undefined ? -1 : store.slotOf(id)
-  }
-
-  #sparseColumns(trait: Trait, row: number): Column[] | undefined {
-    return row < 0 ? undefined : this.#stores.get(trait[$id])!.columns
+  /** `undefined` when `id` lacks the trait. */
+  #columnsOf(trait: Trait, id: number): Column[] | undefined {
+    return this.#archetypeOf(id).columnsOf.get(trait[$id])
   }
 
   /**
-   * One column of a table trait, page math inlined. This and `#setField` are
+   * One column, page math inlined. This and `#setField` are
    * the hot halves of `get` / `set`; everything else is a call out, so the
    * pair stays inside the inlining budget of a caller's loop (SPEC §12.2).
    */
   #getField(id: number, field: Field): unknown {
     const trait = field[$trait]
-    if (trait[$sparse]) return this.#getSparseField(id, field)
     const entities = this[$entities]
     const columns = this[$archetypes].list[entities.archetypes[id]].columnsOf.get(trait[$id])
     if (__DEV__) this.#assertReadable(trait, columns)
@@ -815,7 +776,6 @@ export class World {
 
   #setField(entity: Entity, id: number, field: Field, value: unknown): void {
     const trait = field[$trait]
-    if (trait[$sparse]) return this.#setSparseField(entity, id, field, value)
     const entities = this[$entities]
     const columns = this[$archetypes].list[entities.archetypes[id]].columnsOf.get(trait[$id])
     if (__DEV__) this.#assertReadable(trait, columns)
@@ -826,37 +786,18 @@ export class World {
     this.#wrote(entity, id, trait)
   }
 
-  #getSparseField(id: number, field: Field): unknown {
-    const trait = field[$trait]
-    const row = this.#sparseRow(trait, id)
-    const columns = this.#sparseColumns(trait, row)
-    if (__DEV__) this.#assertReadable(trait, columns)
-    return decode(field, columns![field[$index]].get(row))
-  }
-
-  #setSparseField(entity: Entity, id: number, field: Field, value: unknown): void {
-    const trait = field[$trait]
-    const row = this.#sparseRow(trait, id)
-    const columns = this.#sparseColumns(trait, row)
-    if (__DEV__) this.#assertReadable(trait, columns)
-    const column = columns![field[$index]]
-    column.set(row, value)
-    column.stamp(row, this.#ticks.tick)
-    this.#wrote(entity, id, trait)
-  }
-
   /** The whole-trait copy, or the AoS reference (SPEC §4.4). */
   #getTrait(id: number, trait: Trait, into: object | undefined): unknown {
-    const row = this.#rowOf(trait, id)
-    const columns = this.#columnsAt(trait, id, row)
+    const row = this[$entities].rows[id]
+    const columns = this.#columnsOf(trait, id)
     if (__DEV__) this.#assertReadable(trait, columns)
     if (trait[$kind] === 'aos') return columns![0].get(row)
     return readStruct(trait[$plan], columns!, row, (into ?? {}) as Record<string, unknown>)
   }
 
   #setTrait(entity: Entity, id: number, trait: Trait, value: unknown): void {
-    const row = this.#rowOf(trait, id)
-    const columns = this.#columnsAt(trait, id, row)
+    const row = this[$entities].rows[id]
+    const columns = this.#columnsOf(trait, id)
     if (__DEV__) this.#assertReadable(trait, columns)
     const tick = this.#ticks.tick
     if (trait[$kind] === 'aos') {
@@ -866,24 +807,10 @@ export class World {
     this.#wrote(entity, id, trait)
   }
 
-  #store(trait: Trait): SparseStore {
-    let store = this.#stores.get(trait[$id])
-    if (store === undefined) {
-      this[$traits].register(trait)
-      store = new SparseStore(trait, this[$options].pageSize)
-      this.#stores.set(trait[$id], store)
-      this.#storeList.push(store)
-      const fields = trait[$fields]
-      for (let i = 0; i < fields.length; i++)
-        if (fields[i].kind === 'eid') this[$archetypes].refs.push(store.columns[i])
-    }
-    return store
-  }
-
   /**
-   * Walks the add edges once per table trait; sparse traits leave the graph
-   * alone. A pair first raises its relation's bit, so `R('*')` stays a plain
-   * archetype match and every pair archetype descends from one prefix (SPEC §7.4).
+   * Walks the add edges once per trait. A pair first raises its relation's bit,
+   * so `R('*')` stays a plain archetype match and every pair archetype descends
+   * from one prefix (SPEC §7.4).
    */
   #destination(from: Archetype, items: readonly TraitLike[], start: number): Archetype {
     const graph = this[$archetypes]
@@ -892,7 +819,6 @@ export class World {
     for (let i = start; i < items.length; i++) {
       const trait = traitOf(items[i])
       if (__DEV__) this.#assertAddable(trait, targetOf(items[i]))
-      if (trait[$sparse]) continue
       const relation = (trait as Pair)[$relation]
       if (relation !== undefined) {
         const bit = traits.register(relation)
@@ -920,9 +846,7 @@ export class World {
       const item = items[i]
       const trait = traitOf(item)
       const value = valueOf(item)
-      if (trait[$sparse]) {
-        if (this.#store(trait).add(id, value, tick) && announce) (fresh ??= []).push(item)
-      } else if (!maskHas(from.mask, traits.localId(trait))) {
+      if (!maskHas(from.mask, traits.localId(trait))) {
         const columns = to.columnsOf.get(trait[$id])
         initTrait(columns, row, trait, value, tick)
         if (isExclusive(trait))
@@ -1027,11 +951,6 @@ export class World {
     for (let i = start; i < items.length; i++) {
       const item = items[i]
       const trait = traitOf(item)
-      if (trait[$sparse]) {
-        const store = this.#stores.get(trait[$id])
-        if (store !== undefined && store.remove(id)) ticks.logRemoved(entity, trait[$id])
-        continue
-      }
       const local = traits.localId(trait)
       if (local < 0 || !maskHas(to.mask, local)) continue
 
@@ -1126,9 +1045,6 @@ export class World {
 
     const moved = archetype.removeRow(row)
     if (moved !== NULL_ENTITY) entities.rows[entityId(moved)] = row
-
-    const stores = this.#storeList
-    for (let i = 0; i < stores.length; i++) stores[i].remove(id)
 
     const generation = entities.generations[id]
     entities.generations[id] = 0

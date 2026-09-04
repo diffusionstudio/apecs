@@ -57,7 +57,6 @@ describe('options (§7.1)', () => {
     expect(ChildOf[$options]).toMatchObject({
       exclusive: false,
       onTargetDespawn: 'remove',
-      storage: 'table',
       track: false,
     })
   })

@@ -124,26 +124,22 @@ describe('trait instances (§3.4)', () => {
 })
 
 describe('options (§3.5)', () => {
-  test('storage defaults to table and tracking to off', () => {
+  test('tracking defaults to off', () => {
     const Position = new Trait({ x: 0 })
 
-    expect(Position[$options]).toMatchObject({ storage: 'table', track: false })
+    expect(Position[$options]).toMatchObject({ track: false })
   })
 
   test('options are parsed off the second argument', () => {
-    const Bulky = new Trait({ x: 0 }, { storage: 'sparse', track: true })
+    const Bulky = new Trait({ x: 0 }, { track: true })
 
-    expect(Bulky[$options]).toMatchObject({ storage: 'sparse', track: true })
+    expect(Bulky[$options]).toMatchObject({ track: true })
   })
 
   test('a tag can carry options too', () => {
-    const Flag = new Trait(undefined, { storage: 'sparse' })
+    const Flag = new Trait(undefined, { track: true })
 
     expect(Flag[$kind]).toBe('tag')
-    expect(Flag[$options].storage).toBe('sparse')
-  })
-
-  test.runIf(__DEV__)('dev rejects an unknown storage mode', () => {
-    expect(() => new Trait({ x: 0 }, { storage: 'pages' as never })).toThrowError(/apecs/)
+    expect(Flag[$options].track).toBe(true)
   })
 })

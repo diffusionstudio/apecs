@@ -7,7 +7,6 @@ import { columnOf } from './support/columns'
 
 const Following = new Trait({ target: eid(0), speed: 1 })
 const Nested = new Trait({ link: { to: eid(0) } })
-const SparseRef = new Trait({ to: eid(0) }, { storage: 'sparse' })
 const Bare = new Trait({ target: 0 })
 const IsActive = new Trait()
 const Orbits = new Relation(undefined, { exclusive: true, onTargetDespawn: 'orphan' })
@@ -66,18 +65,6 @@ describe('patching on despawn (§8.5)', () => {
     expect(world.get(tagged, Following.target)).toBe(NULL_ENTITY)
     expect(world.get(nested, Nested)).toEqual({ link: { to: NULL_ENTITY } })
     expect(world.get(bystander, Following.target)).toBe(tagged)
-
-    world.destroy()
-  })
-
-  test('sparse eid columns are patched too', () => {
-    const world = new World()
-    const leader = world.spawn()
-    const e = world.spawn(SparseRef({ to: leader }))
-
-    world.despawn(leader)
-
-    expect(world.get(e, SparseRef.to)).toBe(NULL_ENTITY)
 
     world.destroy()
   })

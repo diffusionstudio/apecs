@@ -11,7 +11,6 @@ import {
   $plan,
   $relation,
   $schema,
-  $sparse,
   $target,
   $targetField,
   $trait,
@@ -141,7 +140,6 @@ export function pairOf(relation: Relation, target: Entity): Pair {
       [$schema]: relation[$schema],
       [$options]: relation[$options],
       [$plan]: relation[$plan],
-      [$sparse]: relation[$sparse],
       [$relation]: relation,
       [$target]: target,
     } as unknown as Pair
@@ -150,7 +148,7 @@ export function pairOf(relation: Relation, target: Entity): Pair {
       warnOnce(
         `pairs:${relation[$id]}`,
         `a non-exclusive relation has ${byTarget.size} distinct targets, each of them an ` +
-          'archetype bit — declare it { exclusive: true } or { storage: "sparse" } (SPEC §7.4)',
+          'archetype bit — declare it { exclusive: true } (SPEC §7.4)',
       )
     }
   }

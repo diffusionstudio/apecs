@@ -8,7 +8,6 @@ import { columnOf } from './support/columns'
 const Position = new Trait({ x: f32(0), y: f32(0) })
 const SortIndex = new Trait({ value: 0 })
 const Name = new Trait({ text: str('') })
-const Sparse = new Trait({ value: 0 }, { storage: 'sparse' })
 const IsActive = new Trait()
 
 function keysOf(world: World, entities: Iterable<number>): number[] {
@@ -293,14 +292,6 @@ describe.runIf(__DEV__)('dev rejects keys that cannot be extracted (§6.7)', () 
     const world = new World()
 
     expect(() => world.query(Name).sortBy(Name.text)).toThrowError(/apecs/)
-
-    world.destroy()
-  })
-
-  test('a sparse trait', () => {
-    const world = new World()
-
-    expect(() => world.query(Position).sortBy(Sparse.value)).toThrowError(/apecs/)
 
     world.destroy()
   })

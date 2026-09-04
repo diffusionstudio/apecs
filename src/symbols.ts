@@ -22,7 +22,6 @@ export const $terms = Symbol('apecs.terms')
 
 export const $mark = Symbol('apecs.mark')
 export const $plan = Symbol('apecs.plan')
-export const $sparse = Symbol('apecs.sparse')
 
 export const $entities = Symbol('apecs.entities')
 export const $archetypes = Symbol('apecs.archetypes')
