@@ -50,9 +50,9 @@ export class Scheduler {
   }
 
   /**
-   * Sync mode's flush point. Core's `onRemove` fires before the data goes, so
+   * Sync mode's flush point. Core's `'remove'` fires before the data goes, so
    * a dispatcher that only marks there leaves the recompute to the post-state
-   * event that always follows it — the exit boundary or the replacing `onAdd`.
+   * event that always follows it — the exit boundary or the replacing `'add'`.
    */
   public settle(): void {
     if (this.mode === 'sync') {

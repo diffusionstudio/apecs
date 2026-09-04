@@ -181,7 +181,7 @@ describe('accessors and change detection (§4.5, §8.3)', () => {
   test('set fires onChange exactly like world.set', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onChange(Position, (e) => seen.push(e));
+    world.on('change', Position, (e) => seen.push(e));
     const entity = world.spawn(Position);
 
     world.accessor(Position.x).set(entity, 1);
@@ -192,7 +192,7 @@ describe('accessors and change detection (§4.5, §8.3)', () => {
   test('get does not fire onChange', () => {
     const world = makeWorld();
     let calls = 0;
-    world.onChange(Position, () => calls++);
+    world.on('change', Position, () => calls++);
     const entity = world.spawn(Position);
 
     world.accessor(Position.x).get(entity);

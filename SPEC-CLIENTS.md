@@ -20,7 +20,7 @@ framework's reactive model without dragging the DOM along at simulation rate.
    coalesce to at most one per animation frame.
 3. **No cost to systems that do not use them.** A world with no mounted hooks pays
    nothing. A world with hooks pays one map lookup per write to an observed trait
-   (§C.3.4) and the tracking cost core already charges for `onChange` (§C.3.5).
+   (§C.3.4) and the tracking cost core already charges for `'change'` (§C.3.5).
 4. **One version, one build.** The bindings are subpath entries of `apecs`, not
    sibling packages, so there is no core/binding version matrix (§C.2).
 
@@ -157,7 +157,7 @@ bounds how often the DOM can be asked to update — not as a trigger, and droppi
 for `'microtask'` would not make the system more event-driven, only less bounded.
 
 **The bindings never call `world.step()` and never read `world.tick`.** Core's
-observers are push-based: `onAdd` / `onRemove` / `onChange` fire inside the write,
+observers are push-based: `'add'` / `'remove'` / `'change'` fire inside the write,
 and enter/exit fire during the archetype move that crosses a query boundary (§8.1,
 §8.2). `step` advances the change clock for `Added()` / `Removed()` queries and
 expires the removal log, both of which core bounds independently of it. An
@@ -178,7 +178,7 @@ must read `world.get` directly, from an imperative hook (§C.7) or an event hand
 
 ### C.3.4 Dispatch and sharing
 
-Core observers are trait-granular and world-wide: `world.onChange(Position)` fires
+Core observers are trait-granular and world-wide: `world.on('change', Position)` fires
 for every entity's write to `Position`, not for one entity's (§8.1). A binding
 that subscribed per hook would therefore cost
 `writes × mounted hooks on that trait` callbacks per frame — 10k moving entities
@@ -189,7 +189,7 @@ twice shares at every one of them:
 
 ```
 world registry
- └─ per trait — exactly one core onAdd / onRemove / onChange subscription
+ └─ per trait — exactly one core 'add' / 'remove' / 'change' subscription
      └─ Map<entityId, Cell[]> — the cells for that trait, interned by subject
          └─ Cell — one committed value, one gate, N listeners
 ```
@@ -218,13 +218,13 @@ cell holding one scratch object, not fifty.
 
 ### C.3.5 The cost of subscribing
 
-`world.onChange` calls `queries.track(trait)`, which promotes the trait to tracked
+`world.on('change', …)` calls `queries.track(trait)`, which promotes the trait to tracked
 for the whole world — every subsequent write to it stamps a change tick (§8.3).
 
 **Mounting a UI hook therefore imposes a cost on the systems that write that
 trait.** This is inherent to core's design, not something the binding can avoid,
 and it must be documented at the top of both bindings' READMEs. It is the second
-reason the imperative hooks (§C.7) exist: one `useOnChange(Position, …)`
+reason the imperative hooks (§C.7) exist: one `useOn('change', Position, …)`
 that fans out manually costs one tracked trait, where twenty `useField` hooks on
 twenty entities also cost one — but a hook on twenty _different_ traits costs
 twenty.
@@ -238,21 +238,21 @@ cell over that view, and differs from the unsorted pair in exactly one respect �
 what wakes it.
 
 **The wake set.** An unsorted query cell's committed value can only change when
-the match set does, so `onEnter` / `onExit` are sufficient. A sorted cell's value
+the match set does, so `'enter'` / `'exit'` are sufficient. A sorted cell's value
 also changes when a sort key moves an entity past a neighbour, which crosses no
 query boundary and fires neither. Its `QueryWatch` (§C.3.4) therefore carries a
 third subscription:
 
 | write                                  | fires                | level it can cause |
 | -------------------------------------- | -------------------- | ------------------ |
-| spawn, despawn, add / remove a trait   | `onEnter` / `onExit` | `rebuild`          |
-| `world.set` / accessor on the sort key | `onChange`           | `resort`           |
+| spawn, despawn, add / remove a trait   | `'enter'` / `'exit'` | `rebuild`          |
+| `world.set` / accessor on the sort key | `'change'`           | `resort`           |
 | `chunk.markChanged` on the sort key    | nothing (§8.1)       | `resort` — missed  |
 
 The third row is core's chunk hazard (§6.7) one level up, and is the only write
 the binding cannot see; §C.11.1 carries it.
 
-The `onChange` costs no tracking that was not already being paid: `sortBy` marks
+The `'change'` subscription costs no tracking that was not already being paid: `sortBy` marks
 its key trait tracked for the whole world (§6.7), so unlike every other hook in
 §C.3.5 a sorted hook imposes nothing on systems that the sort itself did not
 already impose.
@@ -316,7 +316,7 @@ call `sortBy(compare)` and `invalidate()` yourself, and drive the DOM from a ref
    `world.query(...terms)` on each render — an O(1) hash lookup — and must never
    call `.dispose()` on what it gets back.
 4. **Query order is not stable and carries no meaning.** Key React lists by entity,
-   not by index. A query cell recomputes only when `onEnter` / `onExit` fires
+   not by index. A query cell recomputes only when `'enter'` / `'exit'` fires
    (§8.2), so an entity changing archetype without leaving the match set does not
    reorder the committed array — but nothing guarantees that. A list whose order
    is part of what it shows wants `useSortedQuery` (§C.3.6), which guarantees it.
@@ -401,7 +401,7 @@ useChildren(entity, relation: Relation): readonly Entity[]
   mirror core's own `world.get(trait)` / `world.get(field)` overloads rather than
   adding a separate hook name, and unlike a dedicated `useResource` they also
   reach a world trait's individual fields (§C.4.6).
-- `useQueryFirst` is `query.first`, gated on `onEnter` / `onExit`. It is a distinct
+- `useQueryFirst` is `query.first`, gated on `'enter'` / `'exit'`. It is a distinct
   hook rather than `useQuery(...)[0]` because it commits an `Entity`, not an array,
   so it never re-renders on a membership change that leaves the first entity alone.
 - `useSortedQuery` is `world.query(...terms).sortBy(field, direction)` behind the
@@ -480,11 +480,7 @@ singleton hook leaves nothing that collides with Solid's own exports.
 | `useChildren`         | `createChildren`         |
 | `useAccessor`         | `createAccessor`         |
 | `useEntity`           | `createEntity`           |
-| `useOnAdd`            | `onAdd`                  |
-| `useOnRemove`         | `onRemove`               |
-| `useOnChange`         | `onChange`               |
-| `useOnEnter`          | `onEnter`                |
-| `useOnExit`           | `onExit`                 |
+| `useOn`               | `on`                     |
 
 `WorldProvider` is built with `createComponent` and a lazy `children` getter —
 what the Solid JSX transform emits — so the binding needs no JSX build step.
@@ -494,15 +490,13 @@ what the Solid JSX transform emits — so the binding needs no JSX build step.
 ## C.7 Imperative hooks — the escape hatch
 
 ```ts
-useOnAdd    / onAdd    (trait: TraitLike, fn: ObserverFn): void
-useOnRemove / onRemove (trait: TraitLike, fn: ObserverFn): void
-useOnChange / onChange (trait: TraitLike, fn: ObserverFn): void
-useOnEnter  / onEnter  (terms: Term[], fn: ObserverFn): void
-useOnExit   / onExit   (terms: Term[], fn: ObserverFn): void
+useOn / on ('add' | 'remove' | 'change', trait: TraitLike, fn: ObserverFn): void
+useOn / on ('enter' | 'exit', terms: Term[], fn: ObserverFn): void
 ```
 
-A one-to-one mirror of the core observers (§8.1, §8.2) with lifetime-bound
-unsubscribe and no new vocabulary.
+A one-to-one mirror of `world.on` (§8.1, §8.2) with lifetime-bound unsubscribe
+and no new vocabulary. Query events take the terms rather than a `QueryResult`,
+which the hook interns for free (§6.2).
 
 These are **not gated and not coalesced**. They fire synchronously, inside the
 write, exactly as core does. That is deliberate: they exist for the case where a
@@ -568,7 +562,7 @@ useField  useTrait  useHas  useTag        // each with an entity-less world-trai
 useQuery  useQueryFirst  useSortedQuery  useSortedQueryFirst
 useTarget  useParent  useChildren
 useAccessor  useEntity
-useOnAdd  useOnRemove  useOnChange  useOnEnter  useOnExit
+useOn
 
 // apecs/solid
 WorldProvider  useWorld
@@ -576,7 +570,7 @@ createField  createTrait  createHas  createTag  // ditto
 createQuery  createQueryFirst  createSortedQuery  createSortedQueryFirst
 createTarget  createParent  createChildren
 createAccessor  createEntity
-onAdd  onRemove  onChange  onEnter  onExit
+on
 
 // configuration is a WorldProvider prop, not a call:
 //   <WorldProvider world={world} flush="frame" />

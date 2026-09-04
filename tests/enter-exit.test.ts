@@ -13,7 +13,7 @@ describe('query enter and exit (§8.2)', () => {
     const query = world.query(Position, IsActive);
     const entered: Entity[] = [];
     let matchedDuring = false;
-    world.onEnter(query, (entity) => {
+    world.on('enter', query, (entity) => {
       matchedDuring = world.has(entity, Position) && world.has(entity, IsActive);
       entered.push(entity);
     });
@@ -32,8 +32,8 @@ describe('query enter and exit (§8.2)', () => {
     const world = new World();
     const query = world.query(Position, IsActive);
     const log: string[] = [];
-    world.onEnter(query, (e) => log.push(`enter:${e}`));
-    world.onExit(query, (e) => log.push(`exit:${e}`));
+    world.on('enter', query, (e) => log.push(`enter:${e}`));
+    world.on('exit', query, (e) => log.push(`exit:${e}`));
 
     const e = world.spawn(Position, IsActive);
     world.despawn(e);
@@ -47,7 +47,7 @@ describe('query enter and exit (§8.2)', () => {
     const world = new World();
     const query = world.query(Position, IsActive);
     let aliveDuring = true;
-    world.onExit(query, (e) => {
+    world.on('exit', query, (e) => {
       aliveDuring = world.isAlive(e);
     });
 
@@ -62,7 +62,7 @@ describe('query enter and exit (§8.2)', () => {
     const world = new World();
     const query = world.query(Position, IsActive);
     const exited: Entity[] = [];
-    world.onExit(query, (entity) => exited.push(entity));
+    world.on('exit', query, (entity) => exited.push(entity));
 
     const a = world.spawn(Position, IsActive);
     const b = world.spawn(Position, IsActive);
@@ -78,8 +78,8 @@ describe('query enter and exit (§8.2)', () => {
     const world = new World();
     const query = world.query(Position, IsActive);
     let events = 0;
-    world.onEnter(query, () => events++);
-    world.onExit(query, () => events++);
+    world.on('enter', query, () => events++);
+    world.on('exit', query, () => events++);
 
     const e = world.spawn(Position, IsActive); // the one enter
     world.add(e, Velocity);
@@ -94,8 +94,8 @@ describe('query enter and exit (§8.2)', () => {
     const world = new World();
     const query = world.query(Position, IsActive);
     let events = 0;
-    world.onEnter(query, () => events++);
-    world.onExit(query, () => events++);
+    world.on('enter', query, () => events++);
+    world.on('exit', query, () => events++);
 
     const e = world.spawn(Velocity);
     world.add(e, IsActive); // IsActive alone is not a match
@@ -109,8 +109,8 @@ describe('query enter and exit (§8.2)', () => {
   test('each query sees only its own boundary', () => {
     const world = new World();
     const log: string[] = [];
-    world.onEnter(world.query(Position), (e) => log.push(`pos:${e}`));
-    world.onEnter(world.query(Position, IsActive), (e) => log.push(`active:${e}`));
+    world.on('enter', world.query(Position), (e) => log.push(`pos:${e}`));
+    world.on('enter', world.query(Position, IsActive), (e) => log.push(`active:${e}`));
 
     const e = world.spawn(Position);
     world.add(e, IsActive); // already inside query(Position); only the second fires
@@ -124,7 +124,7 @@ describe('query enter and exit (§8.2)', () => {
     const world = new World();
     const query = world.query(Position, IsActive);
     const entered: Entity[] = [];
-    world.onEnter(query, (entity) => entered.push(entity));
+    world.on('enter', query, (entity) => entered.push(entity));
 
     const batch = world.spawnMany(2, Position);
     world.addMany(batch, IsActive);
@@ -139,8 +139,8 @@ describe('query enter and exit (§8.2)', () => {
     const query = world.query(Position, IsActive);
     let entered = 0;
     let exited = 0;
-    const offEnter = world.onEnter(query, () => entered++);
-    const offExit = world.onExit(query, () => exited++);
+    const offEnter = world.on('enter', query, () => entered++);
+    const offExit = world.on('exit', query, () => exited++);
 
     const e = world.spawn(Position, IsActive);
     offEnter();

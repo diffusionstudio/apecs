@@ -173,7 +173,7 @@ world.has(e, Position); // boolean
 world.get(e, Position); // { x, y } — allocates a copy
 world.get(e, Position.x); // number — no allocation
 world.get(e, Position, out); // writes into `out`, returns `out` — no allocation
-world.set(e, Position, { x: 5 }); // partial write, fires onChange
+world.set(e, Position, { x: 5 }); // partial write, fires the 'change' observers
 world.set(e, Position.x, 5);
 ```
 
@@ -186,7 +186,7 @@ world.set(e, Position.x, 5);
 ```ts
 const px = world.accessor(Position.x); // hoist it, like a query
 px.get(e); // number
-px.set(e, 5); // stamps the change tick and fires onChange, exactly like world.set
+px.set(e, 5); // stamps the change tick and fires 'change', exactly like world.set
 ```
 
 ```ts
@@ -278,7 +278,7 @@ Overload resolution is unambiguous because `Entity` is a `number` and traits are
 world.destroy();
 ```
 
-Despawns every entity (firing `onRemove` for each), drops all archetypes and columns, unsubscribes all observers, and **releases the world id** for reuse. Any subsequent call on the world throws in dev builds and is undefined behaviour in production builds.
+Despawns every entity (firing `'remove'` for each), drops all archetypes and columns, unsubscribes all observers, and **releases the world id** for reuse. Any subsequent call on the world throws in dev builds and is undefined behaviour in production builds.
 
 Because the world id is packed into every handle, handles minted by a destroyed world will fail liveness checks against the world that later reuses that id — with the caveat that the check is id-based, not instance-based, so an 8-bit world id wrapping around after 256 world creations is the practical limit of that guarantee.
 
@@ -612,19 +612,20 @@ Two mechanisms, deliberately separate, because they answer different questions.
 ### 8.1 Observers — push
 
 ```ts
-const unsubAdd = world.onAdd(Position, (entity) => {});
-const unsubRemove = world.onRemove(Mesh, (entity) => {
+const unsubAdd = world.on('add', Position, (entity) => {});
+const unsubRemove = world.on('remove', Mesh, (entity) => {
   world.get(entity, Mesh).dispose();
 });
-const unsubChange = world.onChange(Position, (entity) => {});
+const unsubChange = world.on('change', Position, (entity) => {});
 
-const unsub = world.onAdd(ChildOf, (entity, target) => {}); // relations pass the target
+const unsub = world.on('add', ChildOf, (entity, target) => {}); // relations pass the target
 ```
 
+- One registry, keyed by event name: `'add' | 'remove' | 'change'` take a trait, `'enter' | 'exit'` (§8.2) take a query. Every call returns its unsubscribe; an unknown event throws in dev builds.
 - `entity` is always defined. `target` is defined for relations and `undefined` otherwise.
 - Handlers are dispatched **immediately**, at the point of the operation, before it returns. No hidden latency, no frame boundary to reason about.
 - Handlers fire for observers registered on a _relation_ regardless of target; register on `R(target)` to observe one pair.
-- `onRemove` fires **before** the data is destroyed, so the handler can still read it — this is what makes it usable for resource disposal.
+- `'remove'` fires **before** the data is destroyed, so the handler can still read it — this is what makes it usable for resource disposal.
 - Registration is free when nobody is listening: a trait with no observers has no dispatch site cost, and observation is what allocates the change-tick column.
 
 ### 8.2 Query enter / exit
@@ -632,8 +633,8 @@ const unsub = world.onAdd(ChildOf, (entity, target) => {}); // relations pass th
 Often what you actually want is "an entity started/stopped matching this whole query", not "one trait changed":
 
 ```ts
-const unsub = world.onEnter(world.query(Position, IsActive), (entity) => {});
-const unsub = world.onExit(world.query(Position, IsActive), (entity) => {});
+const unsub = world.on('enter', world.query(Position, IsActive), (entity) => {});
+const unsub = world.on('exit', world.query(Position, IsActive), (entity) => {});
 ```
 
 Cheap, because archetype transitions already compute exactly this.
@@ -661,14 +662,14 @@ Each `Changed`/`Added`/`Removed` query stores its own last-seen tick, so two sys
 
 Ticks are written by `world.set` and by cursor setters. **Direct chunk writes bypass them** — call `chunk.markChanged(trait)` or `world.markChanged(e, trait)`. Both forms update the per-row ticks _and_ the column's `lastWriteTick`.
 
-Tick columns are allocated only for **tracked** traits: a trait becomes tracked on the first `onChange` subscription, the first `Changed()`/`sortBy` usage, or `{ track: true }`. Untracked traits pay nothing per write.
+Tick columns are allocated only for **tracked** traits: a trait becomes tracked on the first `'change'` subscription, the first `Changed()`/`sortBy` usage, or `{ track: true }`. Untracked traits pay nothing per write.
 
-At scale, prefer pull over push: `Changed()` is a linear scan of a `Uint32Array` with no call overhead, whereas `onChange` is a call per write.
+At scale, prefer pull over push: `Changed()` is a linear scan of a `Uint32Array` with no call overhead, whereas `'change'` is a call per write.
 
 ### 8.4 Ordering and reentrancy
 
 - Observers for one trait fire in registration order.
-- For a batch operation, all `onAdd` handlers for entity _n_ fire before those for entity _n+1_.
+- For a batch operation, all `'add'` handlers for entity _n_ fire before those for entity _n+1_.
 - Structural changes performed **inside** an observer are applied immediately, but the currently-iterating query is protected by the rules in §9.
 - Reentrancy is bounded: dev builds throw on an observer cascade deeper than 32 levels, which is otherwise an infinite-loop-shaped bug.
 
@@ -859,7 +860,7 @@ class Game extends World {
   constructor() {
     super();
     this.add(Time);
-    this.onRemove(Mesh, (e) => this.get(e, Mesh).geometry.dispose());
+    this.on('remove', Mesh, (e) => this.get(e, Mesh).geometry.dispose());
   }
 }
 
@@ -948,11 +949,8 @@ query.sortBy(field, dir?) | query.sortBy(cmp): SortedQueryResult
 sorted.isDirty  sorted.invalidate()  sorted.rebuild()
 
 // events
-world.onAdd(trait, fn): () => void
-world.onRemove(trait, fn): () => void
-world.onChange(trait, fn): () => void
-world.onEnter(query, fn): () => void
-world.onExit(query, fn): () => void
+world.on('add' | 'remove' | 'change', trait, fn): () => void
+world.on('enter' | 'exit', query, fn): () => void
 
 // deferral
 world.defer(fn)  world.flush()

@@ -20,8 +20,8 @@ describe('clear (§5.5)', () => {
     const spawned = [world.spawn(Position, IsActive), world.spawn(Position), world.spawn(IsActive)];
     const removed: Entity[] = [];
     const exited: Entity[] = [];
-    world.onRemove(Position, (e) => removed.push(e));
-    world.onExit(world.query(IsActive), (e) => exited.push(e));
+    world.on('remove', Position, (e) => removed.push(e));
+    world.on('exit', world.query(IsActive), (e) => exited.push(e));
 
     world.clear();
 
@@ -170,9 +170,9 @@ describe('destroy (§5.5)', () => {
     const a = world.spawn(Position, IsActive);
     const b = world.spawn(Position);
     const removed: string[] = [];
-    world.onRemove(Position, (e) => removed.push(`pos:${e}`));
-    world.onRemove(IsActive, (e) => removed.push(`active:${e}`));
-    world.onRemove(Time, (e) => removed.push(`time:${e}`));
+    world.on('remove', Position, (e) => removed.push(`pos:${e}`));
+    world.on('remove', IsActive, (e) => removed.push(`active:${e}`));
+    world.on('remove', Time, (e) => removed.push(`time:${e}`));
 
     world.destroy();
 
@@ -185,7 +185,7 @@ describe('destroy (§5.5)', () => {
     const world = new World();
     world.spawn(Name({ value: 'last words' }));
     let seen = '';
-    world.onRemove(Name, (e) => {
+    world.on('remove', Name, (e) => {
       seen = world.get(e, Name.value);
     });
 
@@ -215,7 +215,7 @@ describe('destroy (§5.5)', () => {
 
   test('unsubscribe handles from a destroyed world are inert', () => {
     const world = new World();
-    const off = world.onAdd(Position, () => {});
+    const off = world.on('add', Position, () => {});
     world.destroy();
 
     expect(() => off()).not.toThrow();
@@ -244,11 +244,11 @@ describe('destroy (§5.5)', () => {
       () => world.markChanged(e, Position),
       () => world.tick,
       () => world.step(),
-      () => world.onAdd(Position, () => {}),
-      () => world.onRemove(Position, () => {}),
-      () => world.onChange(Position, () => {}),
-      () => world.onEnter(query, () => {}),
-      () => world.onExit(query, () => {}),
+      () => world.on('add', Position, () => {}),
+      () => world.on('remove', Position, () => {}),
+      () => world.on('change', Position, () => {}),
+      () => world.on('enter', query, () => {}),
+      () => world.on('exit', query, () => {}),
       () => world.query(Position),
       () => world.createQuery(Position),
       () => world.queryFirst(Position),

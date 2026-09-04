@@ -18,7 +18,7 @@ describe("onTargetDespawn: 'remove' (§7.5)", () => {
     const a = world.spawn(Position, ChildOf(p));
     const b = world.spawn(ChildOf(p));
     const removed: Array<[Entity, Entity | undefined]> = [];
-    world.onRemove(ChildOf, (entity, target) => removed.push([entity, target]));
+    world.on('remove', ChildOf, (entity, target) => removed.push([entity, target]));
 
     world.despawn(p);
 
@@ -81,7 +81,7 @@ describe("onTargetDespawn: 'despawn' (§7.5)", () => {
     const c = world.spawn(PartOf(a));
     const unrelated = world.spawn(PartOf(world.spawn()));
     const removed: Entity[] = [];
-    world.onRemove(PartOf, (entity) => removed.push(entity));
+    world.on('remove', PartOf, (entity) => removed.push(entity));
 
     world.despawn(root);
 
@@ -199,7 +199,7 @@ describe("onTargetDespawn: 'orphan' (§7.5)", () => {
     const sun = world.spawn();
     const planet = world.spawn(Orbits(sun));
     let removals = 0;
-    world.onRemove(Orbits, () => removals++);
+    world.on('remove', Orbits, () => removals++);
 
     world.despawn(sun);
 
@@ -248,8 +248,8 @@ describe('observers receive the target (§8.1)', () => {
     const p = world.spawn();
     const q = world.spawn();
     const log: string[] = [];
-    world.onAdd(ChildOf, (e, t) => log.push(`add ${e}->${t}`));
-    world.onRemove(ChildOf, (e, t) => log.push(`remove ${e}->${t}`));
+    world.on('add', ChildOf, (e, t) => log.push(`add ${e}->${t}`));
+    world.on('remove', ChildOf, (e, t) => log.push(`remove ${e}->${t}`));
 
     const child = world.spawn(ChildOf(p));
     world.add(child, ChildOf(q));
@@ -271,8 +271,8 @@ describe('observers receive the target (§8.1)', () => {
     const b = world.spawn();
     const added: Array<Entity | undefined> = [];
     const removed: Array<Entity | undefined> = [];
-    world.onAdd(Likes, (_e, t) => added.push(t));
-    world.onRemove(Likes, (_e, t) => removed.push(t));
+    world.on('add', Likes, (_e, t) => added.push(t));
+    world.on('remove', Likes, (_e, t) => removed.push(t));
 
     const e = world.spawn(Likes(a), Likes(b));
     expect(added.sort()).toEqual([a, b].sort());
@@ -290,8 +290,8 @@ describe('observers receive the target (§8.1)', () => {
     const a = world.spawn();
     const b = world.spawn();
     const seen: Entity[] = [];
-    world.onAdd(ChildOf(p), (e) => seen.push(e));
-    world.onAdd(Likes(a), (e) => seen.push(e));
+    world.on('add', ChildOf(p), (e) => seen.push(e));
+    world.on('add', Likes(a), (e) => seen.push(e));
 
     const child = world.spawn(ChildOf(q));
     world.spawn(Likes(b));
@@ -308,7 +308,7 @@ describe('observers receive the target (§8.1)', () => {
     const p = world.spawn();
     const child = world.spawn(ChildOf(p));
     const seen: Array<[boolean, Entity | undefined]> = [];
-    world.onRemove(ChildOf, (e, t) => seen.push([world.has(e, ChildOf(p)), t]));
+    world.on('remove', ChildOf, (e, t) => seen.push([world.has(e, ChildOf(p)), t]));
 
     world.despawn(child);
     const other = world.spawn(ChildOf(p));
@@ -326,8 +326,8 @@ describe('observers receive the target (§8.1)', () => {
   test('a plain trait still passes undefined', () => {
     const world = new World();
     const targets: unknown[] = [];
-    world.onAdd(Position, (_e, t) => targets.push(t));
-    world.onRemove(Position, (_e, t) => targets.push(t));
+    world.on('add', Position, (_e, t) => targets.push(t));
+    world.on('remove', Position, (_e, t) => targets.push(t));
 
     world.despawn(world.spawn(Position));
 

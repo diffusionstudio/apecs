@@ -67,7 +67,7 @@ for anything that must observe every change regardless of visibility.
 
 ```
 world registry
- └─ per trait — exactly ONE core onAdd/onRemove/onChange subscription
+ └─ per trait — exactly ONE core 'add'/'remove'/'change' subscription
      └─ Map<entityId, Cell[]> — cells interned by subject
          └─ Cell — one committed value, one gate, N listeners
 ```
@@ -106,11 +106,7 @@ with Solid's exports.
 | `useChildren`         | `createChildren`         |
 | `useAccessor`         | `createAccessor`         |
 | `useEntity`           | `createEntity`           |
-| `useOnAdd`            | `onAdd`                  |
-| `useOnRemove`         | `onRemove`               |
-| `useOnChange`         | `onChange`               |
-| `useOnEnter`          | `onEnter`                |
-| `useOnExit`           | `onExit`                 |
+| `useOn`               | `on`                     |
 
 Getters are typed `() => V` rather than Solid's `Accessor<V>` — structurally
 identical, and it avoids colliding with apecs's own `Accessor`.
@@ -203,11 +199,8 @@ something else already did.
 ## Owner-bound subscriptions — the escape hatch
 
 ```ts
-onAdd(trait, fn)
-onRemove(trait, fn)
-onChange(trait, fn)
-onEnter(terms: Term[], fn)
-onExit(terms: Term[], fn)
+on('add' | 'remove' | 'change', trait, fn)
+on('enter' | 'exit', terms: Term[], fn)
 ```
 
 A one-to-one mirror of the core observers, released with the owner.
@@ -215,8 +208,8 @@ A one-to-one mirror of the core observers, released with the owner.
 as core does. They exist for the case where a value-gated, frame-decoupled update
 is the wrong tool: writing into a ref, driving a canvas, feeding an animation.
 
-Note these shadow core's `world.onAdd` / `onChange` names at the import level; if
-a module needs both, alias one.
+Note this shadows core's `world.on` name at the import level, and Solid's own
+`on` helper; if a module needs both, alias one.
 
 ## Gotcha checklist
 

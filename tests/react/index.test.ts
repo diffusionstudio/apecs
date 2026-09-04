@@ -18,11 +18,7 @@ import {
   useEntity,
   useField,
   useHas,
-  useOnAdd,
-  useOnChange,
-  useOnEnter,
-  useOnExit,
-  useOnRemove,
+  useOn,
   useParent,
   useQuery,
   useQueryFirst,
@@ -659,11 +655,11 @@ describe('imperative hooks (§C.7)', () => {
     const mounted = mount(
       world,
       () => {
-        useOnAdd(Position, (entity) => calls.push(`add:${entity}`));
-        useOnRemove(Position, (entity) => calls.push(`remove:${entity}`));
-        useOnChange(Position, (entity) => calls.push(`change:${entity}`));
-        useOnEnter([Position, Velocity], (entity) => calls.push(`enter:${entity}`));
-        useOnExit([Position, Velocity], (entity) => calls.push(`exit:${entity}`));
+        useOn('add', Position, (entity) => calls.push(`add:${entity}`));
+        useOn('remove', Position, (entity) => calls.push(`remove:${entity}`));
+        useOn('change', Position, (entity) => calls.push(`change:${entity}`));
+        useOn('enter', [Position, Velocity], (entity) => calls.push(`enter:${entity}`));
+        useOn('exit', [Position, Velocity], (entity) => calls.push(`exit:${entity}`));
       },
       { flush: null },
     );
@@ -694,16 +690,18 @@ describe('imperative hooks (§C.7)', () => {
 
   test('a re-render swaps in the latest callback without re-subscribing', () => {
     const world = new World();
-    const subscribe = vi.spyOn(world, 'onChange');
+    const subscribe = vi.spyOn(world, 'on');
+    const changeSubs = (): number =>
+      subscribe.mock.calls.filter((call) => String(call[0]) === 'change').length;
     const e = world.spawn(Position);
     const seen: number[] = [];
     let generation = 1;
     const mounted = mount(world, () => {
       const mine = generation;
-      useOnChange(Position, () => seen.push(mine));
-      useOnEnter([Position], () => {});
+      useOn('change', Position, () => seen.push(mine));
+      useOn('enter', [Position], () => {});
     });
-    expect(subscribe).toHaveBeenCalledTimes(1);
+    expect(changeSubs()).toBe(1);
 
     world.set(e, Position.x, 1);
     generation = 2;
@@ -711,7 +709,7 @@ describe('imperative hooks (§C.7)', () => {
     world.set(e, Position.x, 2);
 
     expect(seen).toEqual([1, 2]);
-    expect(subscribe).toHaveBeenCalledTimes(1);
+    expect(changeSubs()).toBe(1);
 
     mounted.unmount();
     world.destroy();

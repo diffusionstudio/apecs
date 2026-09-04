@@ -13,14 +13,13 @@ import {
 import type { Accessor } from '../core/accessor';
 import { assert } from '../core/debug';
 import type { Entity } from '../core/entity';
-import type { QueryResult } from '../core/query';
 import type { Relation } from '../core/relation';
 import type { Field, Schema } from '../core/schema';
 import { $kind } from '../core/symbols';
 import type { Term } from '../core/terms';
 import type { Value } from '../core/types';
 import { traitOf, type TraitLike } from '../core/value';
-import type { ObserverFn, World } from '../core/world';
+import type { ObserverFn, QueryEvent, TraitEvent, World, WorldEvent } from '../core/world';
 import {
   alive,
   childrenCell,
@@ -194,9 +193,9 @@ export function useEntity(...items: TraitLike[]): Entity | undefined {
   return entity;
 }
 
-// Lifetime-bound mirrors of the core observers (§C.7): synchronous, ungated,
-// uncoalesced. The observer forwards to the latest `fn`, so an inline closure
-// costs no re-subscription and never fires stale.
+// Lifetime-bound mirror of the core observer registry (§C.7): synchronous,
+// ungated, uncoalesced. The observer forwards to the latest `fn`, so an inline
+// closure costs no re-subscription and never fires stale.
 
 function useLatest<T>(value: T): { current: T } {
   const ref = useRef(value);
@@ -204,49 +203,18 @@ function useLatest<T>(value: T): { current: T } {
   return ref;
 }
 
-function useObserver<K>(
-  world: World,
-  key: K,
-  fn: ObserverFn,
-  subscribe: (world: World, key: K, fn: ObserverFn) => () => void,
-): void {
+export function useOn(event: TraitEvent, trait: TraitLike, fn: ObserverFn): void;
+export function useOn(event: QueryEvent, terms: Term[], fn: ObserverFn): void;
+/** Query events key on the cached `QueryResult` (SPEC §6.2), so a fresh terms array per render is free. */
+export function useOn(event: WorldEvent, subject: TraitLike | Term[], fn: ObserverFn): void {
+  const world = useWorld();
+  const key = Array.isArray(subject) ? world.query(...subject) : subject;
   const latest = useLatest(fn);
   useEffect(
-    () => subscribe(world, key, (entity, target) => latest.current(entity, target)),
-    [world, key, subscribe],
+    () =>
+      world.on(event as TraitEvent, key as TraitLike, (entity, target) =>
+        latest.current(entity, target),
+      ),
+    [world, event, key],
   );
-}
-
-const subscribeAdd = (world: World, trait: TraitLike, fn: ObserverFn): (() => void) =>
-  world.onAdd(trait, fn);
-const subscribeRemove = (world: World, trait: TraitLike, fn: ObserverFn): (() => void) =>
-  world.onRemove(trait, fn);
-const subscribeChange = (world: World, trait: TraitLike, fn: ObserverFn): (() => void) =>
-  world.onChange(trait, fn);
-const subscribeEnter = (world: World, query: QueryResult, fn: ObserverFn): (() => void) =>
-  world.onEnter(query, fn);
-const subscribeExit = (world: World, query: QueryResult, fn: ObserverFn): (() => void) =>
-  world.onExit(query, fn);
-
-export function useOnAdd(trait: TraitLike, fn: ObserverFn): void {
-  useObserver(useWorld(), trait, fn, subscribeAdd);
-}
-
-export function useOnRemove(trait: TraitLike, fn: ObserverFn): void {
-  useObserver(useWorld(), trait, fn, subscribeRemove);
-}
-
-export function useOnChange(trait: TraitLike, fn: ObserverFn): void {
-  useObserver(useWorld(), trait, fn, subscribeChange);
-}
-
-/** Keyed on the cached `QueryResult` (SPEC §6.2), so a fresh terms array per render is free. */
-export function useOnEnter(terms: Term[], fn: ObserverFn): void {
-  const world = useWorld();
-  useObserver(world, world.query(...terms), fn, subscribeEnter);
-}
-
-export function useOnExit(terms: Term[], fn: ObserverFn): void {
-  const world = useWorld();
-  useObserver(world, world.query(...terms), fn, subscribeExit);
 }

@@ -20,7 +20,7 @@ export interface AccessorHost {
   readonly entities: EntityIndex;
   readonly archetypes: readonly Archetype[];
   readonly ticks: Ticks;
-  /** `onChange` subscriptions; a write consults only the size before calling `wrote`. */
+  /** `'change'` subscriptions; a write consults only the size before calling `wrote`. */
   readonly changed: { readonly size: number };
   wrote(entity: Entity, id: number, trait: Trait): void;
   /** Dev only. */

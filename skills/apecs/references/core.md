@@ -101,7 +101,7 @@ world.remove(Time);
 world.get(e, Position); // { x, y } — a COPY, allocates
 world.get(e, Position, out); // writes into `out`, returns it — no allocation
 world.get(e, Position.x); // number — no allocation
-world.set(e, Position, { x: 5 }); // partial write, stamps the tick, fires onChange
+world.set(e, Position, { x: 5 }); // partial write, stamps the tick, fires 'change'
 world.set(e, Position.x, 5);
 world.markChanged(e, Position); // stamp the tick manually
 ```
@@ -272,12 +272,12 @@ forces materialisation, so no `chunks`.
 ## Events and ticks
 
 ```ts
-const off = world.onAdd(Position, (entity) => {});
-world.onRemove(Mesh, (e) => world.get(e, Mesh).dispose()); // fires BEFORE data is destroyed
-world.onChange(Position, (entity) => {});
-world.onAdd(ChildOf, (entity, target) => {}); // relations pass the target
-world.onEnter(world.query(Position, IsActive), (entity) => {});
-world.onExit(world.query(Position, IsActive), (entity) => {});
+const off = world.on('add', Position, (entity) => {});
+world.on('remove', Mesh, (e) => world.get(e, Mesh).dispose()); // fires BEFORE data is destroyed
+world.on('change', Position, (entity) => {});
+world.on('add', ChildOf, (entity, target) => {}); // relations pass the target
+world.on('enter', world.query(Position, IsActive), (entity) => {});
+world.on('exit', world.query(Position, IsActive), (entity) => {});
 ```
 
 - Dispatched immediately, at the point of the operation, in registration order.
@@ -286,7 +286,7 @@ world.onExit(world.query(Position, IsActive), (entity) => {});
 - Registration is what allocates the change-tick column; a trait with no observers
   has no dispatch-site cost.
 
-A trait becomes **tracked** on the first `onChange`, the first `Changed()` /
+A trait becomes **tracked** on the first `'change'` subscription, the first `Changed()` /
 `sortBy` usage, or `{ track: true }`. Tracked columns carry a per-row
 `Uint32Array` of last-write ticks _and_ a scalar `lastWriteTick` (which is what
 makes sorted memoisation O(matching archetypes)).
@@ -297,7 +297,7 @@ makes sorted memoisation O(matching archetypes)).
 2. Cursors from `each` are borrowed — never retain past the callback.
 3. Chunk writes bypass ticks. Call `chunk.markChanged(Trait)` — or
    `world.markChanged(e, Trait)` for one entity from outside a chunk — or
-   `Changed()`, sorted views, and `onChange`-driven UI all silently miss the write.
+   `Changed()`, sorted views, and `'change'`-driven UI all silently miss the write.
 4. Mutating any entity other than the current one during iteration, or spawning,
    requires `world.defer`.
 5. Tags and `Not`/`With`/`Changed`/`Added`/`Removed` contribute **no** `each`

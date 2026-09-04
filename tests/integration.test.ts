@@ -41,7 +41,7 @@ class Game extends World {
   public constructor() {
     super();
     this.add(Time);
-    this.onRemove(MeshOf, (e) => {
+    this.on('remove', MeshOf, (e) => {
       const mesh = this.get(e, MeshOf);
       mesh.geometry.dispose();
       this.disposed.push(mesh);

@@ -38,7 +38,7 @@ describe('observers (§8.1)', () => {
   test('onAdd fires for spawn and for add', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onAdd(Position, (e) => seen.push(e));
+    world.on('add', Position, (e) => seen.push(e));
 
     const spawned = world.spawn(Position);
     const added = world.spawn(Velocity);
@@ -50,7 +50,7 @@ describe('observers (§8.1)', () => {
   test('onRemove fires for remove and for despawn', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onRemove(Position, (e) => seen.push(e));
+    world.on('remove', Position, (e) => seen.push(e));
     const a = world.spawn(Position);
     const b = world.spawn(Position);
 
@@ -63,7 +63,7 @@ describe('observers (§8.1)', () => {
   test('onRemove fires before the data is destroyed', () => {
     const world = makeWorld();
     const values: number[] = [];
-    world.onRemove(Mesh, (e) => {
+    world.on('remove', Mesh, (e) => {
       const mesh = world.get(e, Mesh);
       mesh.disposed = true;
       values.push(world.get(e, Position.x));
@@ -80,7 +80,7 @@ describe('observers (§8.1)', () => {
   test('onChange fires on world.set', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onChange(Position, (e) => seen.push(e));
+    world.on('change', Position, (e) => seen.push(e));
     const entity = world.spawn(Position);
 
     world.set(entity, Position.x, 1);
@@ -95,7 +95,7 @@ describe('observers (§8.1)', () => {
     // the cost tier 2 exists to avoid. Pull, do not push, at scale.
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onChange(Position, (e) => seen.push(e));
+    world.on('change', Position, (e) => seen.push(e));
     const entity = world.spawn(Position);
     const changed = world.query(Position, Changed(Position));
     drain(changed);
@@ -112,7 +112,7 @@ describe('observers (§8.1)', () => {
   test('onChange fires on world.markChanged', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onChange(Position, (e) => seen.push(e));
+    world.on('change', Position, (e) => seen.push(e));
     const entity = world.spawn(Position);
 
     world.markChanged(entity, Position);
@@ -124,9 +124,9 @@ describe('observers (§8.1)', () => {
     const world = makeWorld();
     let calls = 0;
     const offs = [
-      world.onAdd(Position, () => calls++),
-      world.onRemove(Position, () => calls++),
-      world.onChange(Position, () => calls++),
+      world.on('add', Position, () => calls++),
+      world.on('remove', Position, () => calls++),
+      world.on('change', Position, () => calls++),
     ];
     const entity = world.spawn(Position);
     world.set(entity, Position.x, 1);
@@ -147,7 +147,7 @@ describe('observers (§8.1)', () => {
 
   test('unsubscribing twice is harmless', () => {
     const world = makeWorld();
-    const off = world.onAdd(Position, () => {});
+    const off = world.on('add', Position, () => {});
 
     off();
 
@@ -157,7 +157,7 @@ describe('observers (§8.1)', () => {
   test('handlers are dispatched immediately, before the operation returns', () => {
     const world = makeWorld();
     const order: string[] = [];
-    world.onAdd(Position, () => order.push('observer'));
+    world.on('add', Position, () => order.push('observer'));
 
     order.push('before');
     world.spawn(Position);
@@ -169,9 +169,9 @@ describe('observers (§8.1)', () => {
   test('handlers for one trait fire in registration order', () => {
     const world = makeWorld();
     const order: number[] = [];
-    world.onAdd(Position, () => order.push(1));
-    world.onAdd(Position, () => order.push(2));
-    world.onAdd(Position, () => order.push(3));
+    world.on('add', Position, () => order.push(1));
+    world.on('add', Position, () => order.push(2));
+    world.on('add', Position, () => order.push(3));
 
     world.spawn(Position);
 
@@ -182,7 +182,7 @@ describe('observers (§8.1)', () => {
     const ChildOf = new Relation(undefined, { exclusive: true });
     const world = makeWorld();
     const seen: [Entity, Entity | undefined][] = [];
-    world.onAdd(ChildOf, (e, target) => seen.push([e, target]));
+    world.on('add', ChildOf, (e, target) => seen.push([e, target]));
     const parent = world.spawn();
 
     const child = world.spawn(ChildOf(parent));
@@ -193,7 +193,7 @@ describe('observers (§8.1)', () => {
   test('a non-relation observer receives undefined as the target', () => {
     const world = makeWorld();
     const targets: unknown[] = [];
-    world.onAdd(Position, (_e, target) => targets.push(target));
+    world.on('add', Position, (_e, target) => targets.push(target));
 
     world.spawn(Position);
 
@@ -204,7 +204,7 @@ describe('observers (§8.1)', () => {
     const ChildOf = new Relation(undefined, { exclusive: true });
     const world = makeWorld();
     let calls = 0;
-    world.onAdd(ChildOf, () => calls++);
+    world.on('add', ChildOf, () => calls++);
     const a = world.spawn();
     const b = world.spawn();
 
@@ -220,7 +220,7 @@ describe('observers (§8.1)', () => {
     const a = world.spawn();
     const b = world.spawn();
     const seen: Entity[] = [];
-    world.onAdd(Likes(a), (e) => seen.push(e));
+    world.on('add', Likes(a), (e) => seen.push(e));
 
     const first = world.spawn(Likes(a));
     world.spawn(Likes(b));
@@ -233,8 +233,8 @@ describe('batch ordering (§8.4)', () => {
   test('all handlers for entity n fire before those for entity n+1', () => {
     const world = makeWorld();
     const order: string[] = [];
-    world.onAdd(Position, (e) => order.push(`p${e}`));
-    world.onAdd(Velocity, (e) => order.push(`v${e}`));
+    world.on('add', Position, (e) => order.push(`p${e}`));
+    world.on('add', Velocity, (e) => order.push(`v${e}`));
 
     const batch = world.spawnMany(3, Position, Velocity);
 
@@ -251,7 +251,7 @@ describe('batch ordering (§8.4)', () => {
   test('observers fire only after every value is in place', () => {
     const world = makeWorld();
     const seen: { x: number; vx: number }[] = [];
-    world.onAdd(Position, (e) =>
+    world.on('add', Position, (e) =>
       seen.push({ x: world.get(e, Position.x), vx: world.get(e, Velocity.x) }),
     );
 
@@ -262,17 +262,29 @@ describe('batch ordering (§8.4)', () => {
 
   test('a structural change inside an observer applies immediately', () => {
     const world = makeWorld();
-    world.onAdd(Position, (e) => world.add(e, IsActive));
+    world.on('add', Position, (e) => world.add(e, IsActive));
 
     const entity = world.spawn(Position);
 
     expect(world.has(entity, IsActive)).toBe(true);
   });
 
+  test.runIf(__DEV__)('dev rejects an unknown event and a mismatched subject', () => {
+    const world = makeWorld();
+    const noop = (): void => {};
+
+    // @ts-expect-error the event union does not admit it
+    expect(() => world.on('added', Position, noop)).toThrow(/unknown event/);
+    // @ts-expect-error a trait event does not take a query
+    expect(() => world.on('add', world.query(Position), noop)).toThrow(/observes a trait/);
+    // @ts-expect-error a query event does not take a trait
+    expect(() => world.on('exit', Position, noop)).toThrow(/observes a query/);
+  });
+
   test.runIf(__DEV__)('an unbounded observer cascade is caught', () => {
     const world = makeWorld();
     let n = 0;
-    world.onAdd(Position, () => {
+    world.on('add', Position, () => {
       n++;
       world.spawn(Position);
     });
@@ -287,7 +299,7 @@ describe('query enter and exit (§8.2)', () => {
     const world = makeWorld();
     const query = world.query(Position, IsActive);
     const seen: Entity[] = [];
-    world.onEnter(query, (e) => seen.push(e));
+    world.on('enter', query, (e) => seen.push(e));
 
     const entity = world.spawn(Position);
 
@@ -302,7 +314,7 @@ describe('query enter and exit (§8.2)', () => {
     const world = makeWorld();
     const query = world.query(Position, IsActive);
     const seen: Entity[] = [];
-    world.onExit(query, (e) => seen.push(e));
+    world.on('exit', query, (e) => seen.push(e));
     const entity = world.spawn(Position, IsActive);
 
     world.remove(entity, IsActive);
@@ -313,7 +325,7 @@ describe('query enter and exit (§8.2)', () => {
   test('exit fires on despawn', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onExit(world.query(Position), (e) => seen.push(e));
+    world.on('exit', world.query(Position), (e) => seen.push(e));
     const entity = world.spawn(Position);
 
     world.despawn(entity);
@@ -324,7 +336,7 @@ describe('query enter and exit (§8.2)', () => {
   test('spawning straight into the match fires enter once', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onEnter(world.query(Position, IsActive), (e) => seen.push(e));
+    world.on('enter', world.query(Position, IsActive), (e) => seen.push(e));
 
     const entity = world.spawn(Position, IsActive);
 
@@ -335,8 +347,8 @@ describe('query enter and exit (§8.2)', () => {
     const world = makeWorld();
     const query = world.query(Position);
     let calls = 0;
-    world.onEnter(query, () => calls++);
-    world.onExit(query, () => calls++);
+    world.on('enter', query, () => calls++);
+    world.on('exit', query, () => calls++);
     const entity = world.spawn(Position);
 
     expect(calls).toBe(1); // the spawn
@@ -351,8 +363,8 @@ describe('query enter and exit (§8.2)', () => {
     const world = makeWorld();
     const query = world.query(Position);
     let calls = 0;
-    const offEnter = world.onEnter(query, () => calls++);
-    const offExit = world.onExit(query, () => calls++);
+    const offEnter = world.on('enter', query, () => calls++);
+    const offExit = world.on('exit', query, () => calls++);
 
     offEnter();
     offExit();
@@ -366,8 +378,8 @@ describe('query enter and exit (§8.2)', () => {
     const entered: Entity[] = [];
     const exited: Entity[] = [];
     const query = world.query(Position);
-    world.onEnter(query, (e) => entered.push(e));
-    world.onExit(query, (e) => exited.push(e));
+    world.on('enter', query, (e) => entered.push(e));
+    world.on('exit', query, (e) => exited.push(e));
 
     const batch = world.spawnMany(5, Position);
     world.despawnMany(batch);

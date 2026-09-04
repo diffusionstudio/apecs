@@ -67,7 +67,7 @@ describe('tracked-trait promotion (§8.3)', () => {
     const e = world.spawn(Lazy);
     expect(columnOf(world, e, Lazy.value).ticks).toBeNull();
 
-    world.onChange(Lazy, () => {});
+    world.on('change', Lazy, () => {});
     world.step();
     world.set(e, Lazy.value, 1);
 

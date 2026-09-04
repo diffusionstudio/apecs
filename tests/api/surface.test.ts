@@ -64,11 +64,7 @@ const WORLD_METHODS = [
   'query',
   'createQuery',
   'queryFirst',
-  'onAdd',
-  'onRemove',
-  'onChange',
-  'onEnter',
-  'onExit',
+  'on',
   'defer',
   'flush',
 ] as const;
@@ -270,11 +266,11 @@ describe('observers and deferral (§14)', () => {
     const noop = () => {};
     const query = world.query(Position);
     const offs = [
-      world.onAdd(Position, noop),
-      world.onRemove(Position, noop),
-      world.onChange(Position, noop),
-      world.onEnter(query, noop),
-      world.onExit(query, noop),
+      world.on('add', Position, noop),
+      world.on('remove', Position, noop),
+      world.on('change', Position, noop),
+      world.on('enter', query, noop),
+      world.on('exit', query, noop),
     ];
 
     for (const off of offs) {

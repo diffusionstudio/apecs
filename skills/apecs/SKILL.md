@@ -97,8 +97,9 @@ when deferral is awkward. Dev builds detect unsafe mutation; production does not
 
 Two mechanisms, for two different questions:
 
-- **Push — `world.onAdd` / `onRemove` / `onChange` / `onEnter` / `onExit`.**
-  Dispatched synchronously inside the write. `onRemove` fires _before_ the data is
+- **Push — `world.on('add' | 'remove' | 'change', trait, fn)` and
+  `world.on('enter' | 'exit', query, fn)`.** Dispatched synchronously inside the
+  write; each call returns its unsubscribe. `'remove'` fires _before_ the data is
   destroyed, which is what makes it usable for disposing GPU/DOM resources.
 - **Pull — `Changed(T)` / `Added(T)` / `Removed(T)` query terms.** A linear scan
   of a `Uint32Array`, driven by `world.step()` advancing the tick. Each such query
@@ -108,7 +109,7 @@ At scale prefer pull. And know the one silent failure mode:
 
 > **Chunk writes bypass change tracking.** After writing columns through
 > `chunks()`, call `chunk.markChanged(Trait)` — otherwise `Changed()` filters miss
-> the write, sorted views don't resort, and `onChange`-driven UI never updates.
+> the write, sorted views don't resort, and `'change'`-driven UI never updates.
 > Dev warns about a missing `markChanged`; production is silent.
 
 ## Relations
@@ -157,7 +158,7 @@ Two things to internalise before writing any binding code:
    that trait then stamps a tick. It is a real cost on the simulation, not
    just on the component.
 2. **Anything that changes every frame does not belong in a re-render.** Use the
-   imperative hooks (`useOnChange` / `onChange`, …) and write into a ref or canvas.
+   imperative hooks (`useOn('change', …)` / `on('change', …)`) and write into a ref or canvas.
    That is what they exist for.
 
 ## References

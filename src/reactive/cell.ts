@@ -336,11 +336,11 @@ class TargetCell extends EntityCell<Entity | undefined> {
 
 /**
  * One core subscription per `(world, trait)`; a write costs one map lookup and
- * a miss returns at once (§C.3.4). Gains come from `onAdd` and losses from the
+ * a miss returns at once (§C.3.4). Gains come from `'add'` and losses from the
  * exit boundary of `world.query(trait)`, both of which fire once the world is
- * consistent — which is what lets `'sync'` recompute inside them. `onChange`
+ * consistent — which is what lets `'sync'` recompute inside them. `'change'`
  * is taken only while a value cell exists, since subscribing is what promotes
- * the trait to tracked (§C.3.5); `onRemove` only while a target-keyed cell
+ * the trait to tracked (§C.3.5); `'remove'` only while a target-keyed cell
  * does, since it is the one event that still names the old target.
  */
 class TraitWatch {
@@ -394,7 +394,7 @@ class TraitWatch {
       this.listen();
     }
     if (cell.kind <= TRAIT && ++this.valued === 1) {
-      this.offChange = this.registry.world.onChange(this.item, this.onSource);
+      this.offChange = this.registry.world.on('change', this.item, this.onSource);
     }
   }
 
@@ -425,7 +425,7 @@ class TraitWatch {
       this.listen();
     }
     if (++this.targeted === 1) {
-      this.offRemove = this.registry.world.onRemove(this.item, this.onRemove);
+      this.offRemove = this.registry.world.on('remove', this.item, this.onRemove);
     }
   }
 
@@ -446,8 +446,8 @@ class TraitWatch {
 
   private listen(): void {
     const world = this.registry.world;
-    this.offAdd = world.onAdd(this.item, this.onAdd);
-    this.offExit = world.onExit(world.query(this.item), this.onSource);
+    this.offAdd = world.on('add', this.item, this.onAdd);
+    this.offExit = world.on('exit', world.query(this.item), this.onSource);
   }
 
   private release(): void {
@@ -615,7 +615,7 @@ class SortedQueryCell extends QueryCellBase<readonly Entity[], SortedQueryResult
 
 /**
  * One enter/exit boundary per result, shared by its match and first cells. A
- * sorted result adds `onChange` on its key trait (§C.3.6): a key that moves an
+ * sorted result adds `'change'` on its key trait (§C.3.6): a key that moves an
  * entity past a neighbour crosses no boundary. That subscription promotes no
  * trait that `sortBy` had not already promoted (SPEC §6.7).
  */
@@ -652,10 +652,10 @@ class QueryWatch {
   public activate(): void {
     if (++this.active === 1) {
       const world = this.registry.world;
-      this.offEnter = world.onEnter(this.boundary, this.onCross);
-      this.offExit = world.onExit(this.boundary, this.onCross);
+      this.offEnter = world.on('enter', this.boundary, this.onCross);
+      this.offExit = world.on('exit', this.boundary, this.onCross);
       if (this.key !== null) {
-        this.offChange = world.onChange(this.key, this.onCross);
+        this.offChange = world.on('change', this.key, this.onCross);
       }
     }
   }

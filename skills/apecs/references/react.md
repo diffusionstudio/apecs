@@ -58,7 +58,7 @@ anything that must observe every change regardless of visibility.
 
 ```
 world registry
- └─ per trait — exactly ONE core onAdd/onRemove/onChange subscription
+ └─ per trait — exactly ONE core 'add'/'remove'/'change' subscription
      └─ Map<entityId, Cell[]> — cells interned by subject
          └─ Cell — one committed value, one gate, N listeners
 ```
@@ -157,11 +157,8 @@ items once, at spawn.
 ## Imperative hooks — the escape hatch
 
 ```ts
-useOnAdd(trait, fn)
-useOnRemove(trait, fn)
-useOnChange(trait, fn)
-useOnEnter(terms: Term[], fn)
-useOnExit(terms: Term[], fn)
+useOn('add' | 'remove' | 'change', trait, fn)
+useOn('enter' | 'exit', terms: Term[], fn)
 ```
 
 **Not gated, not coalesced.** They fire synchronously inside the write, exactly as

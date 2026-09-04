@@ -34,7 +34,15 @@ export type { Modifier, Term, TermKind } from './core/terms';
 export type { Entity } from './core/entity';
 
 export { World } from './core/world';
-export type { EntityBatch, ObserverFn, Subject, WorldOptions } from './core/world';
+export type {
+  EntityBatch,
+  ObserverFn,
+  QueryEvent,
+  Subject,
+  TraitEvent,
+  WorldEvent,
+  WorldOptions,
+} from './core/world';
 export type { Accessor } from './core/accessor';
 
 export type { QueryResult } from './core/query';

@@ -268,11 +268,21 @@ describe('sorted queries (§6.7, §11)', () => {
 
 describe('observers (§8.1, §11)', () => {
   test('a handler takes a handle and, for relations, a target', () => {
-    const off = world.onAdd(Position, (e, target) => {
+    const off = world.on('add', Position, (e, target) => {
       expectTypeOf(e).toEqualTypeOf<Entity>();
       expectTypeOf(target).toEqualTypeOf<Entity | undefined>();
     });
     expectTypeOf(off).toEqualTypeOf<() => void>();
-    world.onEnter(world.query(Position), (e) => expectTypeOf(e).toEqualTypeOf<Entity>());
+    world.on('enter', world.query(Position), (e) => expectTypeOf(e).toEqualTypeOf<Entity>());
+  });
+
+  test('the event picks the subject: a trait for add/remove/change, a query for enter/exit', () => {
+    const noop = (): void => {};
+    // @ts-expect-error a trait event does not take a query
+    world.on('add', world.query(Position), noop);
+    // @ts-expect-error a query event does not take a trait
+    world.on('exit', Position, noop);
+    // @ts-expect-error unknown events are rejected
+    world.on('added', Position, noop);
   });
 });

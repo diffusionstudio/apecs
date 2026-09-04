@@ -378,7 +378,7 @@ describe('set is a real write (§4.5, §8.1, §8.3)', () => {
     const b = world.spawn(Position);
     const px = world.accessor(Position.x);
     const changed: Entity[] = [];
-    world.onChange(Position, (entity) => changed.push(entity));
+    world.on('change', Position, (entity) => changed.push(entity));
     const query = world.query(Position, Changed(Position));
     query.each(() => {});
     world.step();
@@ -399,7 +399,7 @@ describe('set is a real write (§4.5, §8.1, §8.3)', () => {
     const e = world.spawn(Position);
     const px = world.accessor(Position.x);
     let calls = 0;
-    world.onChange(Position, () => calls++);
+    world.on('change', Position, () => calls++);
     const query = world.query(Position, Changed(Position));
     query.each(() => {});
     world.step();
@@ -421,7 +421,7 @@ describe('set is a real write (§4.5, §8.1, §8.3)', () => {
     const child = world.spawn(Attached(p));
     const offset = world.accessor(Attached.offset);
     const seen: [Entity, Entity | undefined][] = [];
-    world.onChange(Attached, (entity, target) => seen.push([entity, target]));
+    world.on('change', Attached, (entity, target) => seen.push([entity, target]));
 
     offset.set(child, 3);
 

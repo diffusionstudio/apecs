@@ -25,11 +25,7 @@ import {
   createTag,
   createTarget,
   createTrait,
-  onAdd,
-  onChange,
-  onEnter,
-  onExit,
-  onRemove,
+  on,
   useWorld,
 } from '../../src/solid/index';
 
@@ -571,11 +567,11 @@ describe('imperative subscriptions (§C.7)', () => {
     const { dispose } = mount(
       world,
       () => {
-        onAdd(Position, (entity) => calls.push(`add:${entity}`));
-        onRemove(Position, (entity) => calls.push(`remove:${entity}`));
-        onChange(Position, (entity) => calls.push(`change:${entity}`));
-        onEnter([Position, Velocity], (entity) => calls.push(`enter:${entity}`));
-        onExit([Position, Velocity], (entity) => calls.push(`exit:${entity}`));
+        on('add', Position, (entity) => calls.push(`add:${entity}`));
+        on('remove', Position, (entity) => calls.push(`remove:${entity}`));
+        on('change', Position, (entity) => calls.push(`change:${entity}`));
+        on('enter', [Position, Velocity], (entity) => calls.push(`enter:${entity}`));
+        on('exit', [Position, Velocity], (entity) => calls.push(`exit:${entity}`));
       },
       null,
     );

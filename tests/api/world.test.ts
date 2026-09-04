@@ -167,7 +167,7 @@ describe('trait isolation (§5.3)', () => {
     const a = makeWorld();
     const b = makeWorld();
     let calls = 0;
-    a.onAdd(Position, () => calls++);
+    a.on('add', Position, () => calls++);
 
     b.spawn(Position);
 
@@ -224,7 +224,7 @@ describe('world traits (§5.4)', () => {
   test('a world trait gets observers like any other', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
-    world.onAdd(Time, (e) => seen.push(e));
+    world.on('add', Time, (e) => seen.push(e));
 
     world.add(Time);
 
@@ -287,7 +287,7 @@ describe('clear (§5.5)', () => {
   test('clear fires onRemove for every despawned entity', () => {
     const world = makeWorld();
     let calls = 0;
-    world.onRemove(Position, () => calls++);
+    world.on('remove', Position, () => calls++);
     world.spawnMany(10, Position);
 
     world.clear();
@@ -339,8 +339,8 @@ describe('destroy (§5.5)', () => {
   test('destroy fires onRemove for every entity, including the world entity', () => {
     const world = new World();
     const seen: Entity[] = [];
-    world.onRemove(Position, (e) => seen.push(e));
-    world.onRemove(Time, (e) => seen.push(e));
+    world.on('remove', Position, (e) => seen.push(e));
+    world.on('remove', Time, (e) => seen.push(e));
     world.add(Time);
     const entity = world.spawn(Position);
 
@@ -353,7 +353,7 @@ describe('destroy (§5.5)', () => {
   test('onRemove can still read the data it is being told about', () => {
     const world = new World();
     const values: number[] = [];
-    world.onRemove(Position, (e) => values.push(world.get(e, Position.x)));
+    world.on('remove', Position, (e) => values.push(world.get(e, Position.x)));
     world.spawn(Position({ x: 7 }));
 
     world.destroy();

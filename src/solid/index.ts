@@ -9,7 +9,7 @@
  *
  * Reading a value through `createField` / `createTrait` promotes that trait to
  * tracked for the whole world, which every system writing it then pays for
- * (§C.3.5). The `on*` subscriptions are the way to observe many traits at once
+ * (§C.3.5). The `on` subscriptions are the way to observe many traits at once
  * without that fan-out.
  *
  * The getters are typed `() => V` rather than Solid's `Accessor<V>` —
@@ -37,7 +37,7 @@ import { $kind } from '../core/symbols';
 import type { Term } from '../core/terms';
 import type { Value } from '../core/types';
 import { traitOf, type TraitLike } from '../core/value';
-import type { ObserverFn, World } from '../core/world';
+import type { ObserverFn, QueryEvent, TraitEvent, World, WorldEvent } from '../core/world';
 import {
   alive,
   childrenCell,
@@ -215,27 +215,14 @@ export function createEntity(...items: TraitLike[]): Entity {
   return entity;
 }
 
-// Owner-bound mirrors of the core observers (§C.7): synchronous, ungated,
-// uncoalesced, and released with the owner.
+// Owner-bound mirror of the core observer registry (§C.7): synchronous,
+// ungated, uncoalesced, and released with the owner.
 
-export function onAdd(trait: TraitLike, fn: ObserverFn): void {
-  onCleanup(useWorld().onAdd(trait, fn));
-}
-
-export function onRemove(trait: TraitLike, fn: ObserverFn): void {
-  onCleanup(useWorld().onRemove(trait, fn));
-}
-
-export function onChange(trait: TraitLike, fn: ObserverFn): void {
-  onCleanup(useWorld().onChange(trait, fn));
-}
-
-export function onEnter(terms: Term[], fn: ObserverFn): void {
+export function on(event: TraitEvent, trait: TraitLike, fn: ObserverFn): void;
+export function on(event: QueryEvent, terms: Term[], fn: ObserverFn): void;
+/** Query events key on the cached `QueryResult` (SPEC §6.2), so a fresh terms array is free. */
+export function on(event: WorldEvent, subject: TraitLike | Term[], fn: ObserverFn): void {
   const world = useWorld();
-  onCleanup(world.onEnter(world.query(...terms), fn));
-}
-
-export function onExit(terms: Term[], fn: ObserverFn): void {
-  const world = useWorld();
-  onCleanup(world.onExit(world.query(...terms), fn));
+  const key = Array.isArray(subject) ? world.query(...subject) : subject;
+  onCleanup(world.on(event as TraitEvent, key as TraitLike, fn));
 }

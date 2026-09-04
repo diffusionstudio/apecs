@@ -104,6 +104,12 @@ function indexed(batch: EntityBatch): ArrayLike<number> {
 /** `target` is defined for relations, `undefined` otherwise (SPEC §8.1). */
 export type ObserverFn = (entity: Entity, target?: Entity) => void;
 
+/** Trait-keyed observer events (SPEC §8.1). */
+export type TraitEvent = 'add' | 'remove' | 'change';
+/** Query boundary events (SPEC §8.2). */
+export type QueryEvent = 'enter' | 'exit';
+export type WorldEvent = TraitEvent | QueryEvent;
+
 interface Boundary {
   readonly query: QueryResult<any>;
   readonly enter: ObserverFn[];
@@ -112,6 +118,9 @@ interface Boundary {
 
 /** Dev builds treat a deeper observer cascade as an infinite loop (SPEC §8.4). */
 const MAX_OBSERVER_DEPTH = 32;
+
+/** Handed back for an unknown event, which only production builds get past. */
+const NOOP_UNSUBSCRIBE = (): void => {};
 
 function append(list: ObserverFn[], fn: ObserverFn): () => void {
   list.push(fn);
@@ -545,41 +554,35 @@ export class World {
     this.#ticks.step();
   }
 
-  public onAdd(trait: TraitLike, fn: ObserverFn): () => void {
+  public on(event: TraitEvent, trait: TraitLike, fn: ObserverFn): () => void;
+  public on(event: QueryEvent, query: QueryResult<any>, fn: ObserverFn): () => void;
+  public on(event: WorldEvent, subject: TraitLike | QueryResult<any>, fn: ObserverFn): () => void {
     if (__DEV__) {
       this.#assertNotDestroyed();
+      const wantsQuery = event === 'enter' || event === 'exit';
+      const isTrait = typeof subject === 'function' || $trait in subject;
+      assert(
+        wantsQuery !== isTrait,
+        `'${String(event)}' observes ${wantsQuery ? 'a query' : 'a trait'}`,
+      );
     }
-    return subscribe(this.#onAdd, trait, fn);
-  }
-
-  public onRemove(trait: TraitLike, fn: ObserverFn): () => void {
-    if (__DEV__) {
-      this.#assertNotDestroyed();
+    switch (event) {
+      case 'add':
+        return subscribe(this.#onAdd, subject as TraitLike, fn);
+      case 'remove':
+        return subscribe(this.#onRemove, subject as TraitLike, fn);
+      case 'change':
+        // Subscribing is what promotes the trait to tracked (SPEC §8.3).
+        this[$queries].track(observerKey(subject as TraitLike));
+        return subscribe(this.#onChange, subject as TraitLike, fn);
+      case 'enter':
+        return append(this.#boundary(subject as QueryResult).enter, fn);
+      case 'exit':
+        return append(this.#boundary(subject as QueryResult).exit, fn);
+      default:
+        assert(false, `unknown event '${String(event)}'`);
+        return NOOP_UNSUBSCRIBE;
     }
-    return subscribe(this.#onRemove, trait, fn);
-  }
-
-  /** Subscribing is what promotes the trait to tracked (SPEC §8.3). */
-  public onChange(trait: TraitLike, fn: ObserverFn): () => void {
-    if (__DEV__) {
-      this.#assertNotDestroyed();
-    }
-    this[$queries].track(observerKey(trait));
-    return subscribe(this.#onChange, trait, fn);
-  }
-
-  public onEnter(query: QueryResult<any>, fn: ObserverFn): () => void {
-    if (__DEV__) {
-      this.#assertNotDestroyed();
-    }
-    return append(this.#boundary(query).enter, fn);
-  }
-
-  public onExit(query: QueryResult<any>, fn: ObserverFn): () => void {
-    if (__DEV__) {
-      this.#assertNotDestroyed();
-    }
-    return append(this.#boundary(query).exit, fn);
   }
 
   // ------------------------------------------------------------------ queries
@@ -650,7 +653,7 @@ export class World {
       return;
     }
     this.#clear();
-    // The world entity goes down with the world; its traits get their `onRemove` too.
+    // The world entity goes down with the world; its traits get their `'remove'` too.
     if (this.#onRemove.size !== 0) {
       this.#removing(this.entity, WORLD_ENTITY_ID);
     }
@@ -704,7 +707,7 @@ export class World {
 
   /**
    * Highest id first, so most removals take the archetype tail and swap nothing.
-   * The index is re-read per id: an `onRemove` handler may spawn and grow it.
+   * The index is re-read per id: a `'remove'` handler may spawn and grow it.
    */
   #clear(): void {
     for (let id = this.#nextId - 1; id >= FIRST_ENTITY_ID; id--) {
@@ -716,7 +719,7 @@ export class World {
     this.#drain();
   }
 
-  /** `onRemove` for every trait the entity holds, while its data is still intact (SPEC §8.1). */
+  /** `'remove'` for every trait the entity holds, while its data is still intact (SPEC §8.1). */
   #removing(entity: Entity, id: number): void {
     for (const [key, list] of this.#onRemove) {
       if (list.length === 0) {
@@ -857,7 +860,7 @@ export class World {
     this.#emit(this.#onChange, entity, trait, target);
   }
 
-  /** The trait was just attached: records the gain and fires `onAdd`. */
+  /** The trait was just attached: records the gain and fires `'add'`. */
   #attached(entity: Entity, id: number, trait: Trait, target: Entity): void {
     if (this.#ticks.added.size !== 0) {
       this.#ticks.stampAdded(trait[$id], id);
@@ -1075,7 +1078,7 @@ export class World {
   /**
    * The entity already carries the relation: a column write plus two index
    * edits, and no archetype transition. Returns whether the target changed;
-   * the old pair's `onRemove` fires first, the new one's `onAdd` is the
+   * the old pair's `'remove'` fires first, the new one's `'add'` is the
    * caller's to announce (SPEC §7.4).
    */
   #retarget(
@@ -1118,7 +1121,7 @@ export class World {
   }
 
   #remove(entity: Entity, id: number, items: readonly TraitLike[], start: number): void {
-    // `onRemove` runs first, while the data is still intact (SPEC §8.1). The
+    // `'remove'` runs first, while the data is still intact (SPEC §8.1). The
     // transition is computed afterwards because handlers may themselves mutate.
     if (this.#onRemove.size !== 0) {
       for (let i = start; i < items.length; i++) {
@@ -1174,7 +1177,7 @@ export class World {
     }
   }
 
-  /** `onRemove` for one item of a `remove` call, if the entity actually holds it. */
+  /** `'remove'` for one item of a `remove` call, if the entity actually holds it. */
   #leaving(entity: Entity, id: number, item: TraitLike): void {
     const trait = traitOf(item);
     if (isExclusive(trait)) {
