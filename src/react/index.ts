@@ -90,6 +90,24 @@ export function useQueryFirst(...terms: Term[]): Entity | undefined {
   return todo(terms);
 }
 
+/** `sortBy` behind a cell: the one hook whose order means something (§C.3.6). */
+export function useSortedQuery(
+  terms: Term[],
+  field: Field,
+  direction?: 'asc' | 'desc',
+): readonly Entity[] {
+  return todo(terms, field, direction);
+}
+
+/** The extremum by the key — commits one entity, so reshuffles behind it are free. */
+export function useSortedQueryFirst(
+  terms: Term[],
+  field: Field,
+  direction?: 'asc' | 'desc',
+): Entity | undefined {
+  return todo(terms, field, direction);
+}
+
 /** The target of an exclusive relation; `NULL_ENTITY` maps to `undefined`. */
 export function useTarget(entity: Entity, relation: TraitLike): Entity | undefined {
   return todo(entity, relation);

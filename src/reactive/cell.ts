@@ -17,8 +17,18 @@ import { NULL_ENTITY, entityId, type Entity } from '../core/entity';
 import { indexedTarget, type QueryResult } from '../core/query';
 import { isExclusive, isRelation, type Pair, type Relation } from '../core/relation';
 import type { Field, Plan, Schema } from '../core/schema';
-import { $destroyed, $index, $kind, $plan, $relation, $target, $trait } from '../core/symbols';
-import type { Term } from '../core/terms';
+import type { SortedQueryResult } from '../core/sorted';
+import {
+  $destroyed,
+  $index,
+  $kind,
+  $plan,
+  $relation,
+  $target,
+  $trait,
+  $view,
+} from '../core/symbols';
+import { With, type Term } from '../core/terms';
 import type { Trait, TraitInstance } from '../core/trait';
 import type { Value } from '../core/types';
 import { targetOf, traitOf, type TraitLike } from '../core/value';
@@ -481,10 +491,12 @@ class TraitWatch {
 
 // ----------------------------------------------------------------- query cells
 
-abstract class QueryCellBase<V> extends CellBase<V> {
+type AnyResult = QueryResult | SortedQueryResult;
+
+abstract class QueryCellBase<V, R extends AnyResult = AnyResult> extends CellBase<V> {
   public constructor(
     protected readonly world: World,
-    protected readonly query: QueryResult,
+    protected readonly result: R,
     private readonly watch: QueryWatch,
     public readonly kind: number,
     private readonly relation: TraitWatch | null,
@@ -509,9 +521,9 @@ abstract class QueryCellBase<V> extends CellBase<V> {
 }
 
 /** The match set. Length first, then element-wise; a new array only on a difference. */
-class QueryCell extends QueryCellBase<readonly Entity[]> {
+class QueryCell extends QueryCellBase<readonly Entity[], QueryResult> {
   protected refresh(): boolean {
-    const query = this.query;
+    const query = this.result;
     const committed = this.committed;
     const count = this.world[$destroyed] ? 0 : query.count;
     if (committed !== UNSET && count === committed.length) {
@@ -544,9 +556,14 @@ class QueryCell extends QueryCellBase<readonly Entity[]> {
   }
 }
 
+/**
+ * `first`, committed as an entity so churn behind it is free. On a sorted
+ * result that entity is the extremum — the leader, the nearest — and every
+ * reshuffle behind the winner costs nothing (§C.3.6).
+ */
 class QueryFirstCell extends QueryCellBase<Entity | undefined> {
   protected refresh(): boolean {
-    const next = this.world[$destroyed] ? undefined : this.query.first;
+    const next = this.world[$destroyed] ? undefined : this.result.first;
     if (next === this.committed) {
       return false;
     }
@@ -555,17 +572,74 @@ class QueryFirstCell extends QueryCellBase<Entity | undefined> {
   }
 }
 
-/** One enter/exit boundary per `QueryResult`, shared by its match and first cells. */
+/**
+ * The ordered match set (§C.3.6). Reads the view's own buffer — `entities()`
+ * slices a copy per call — and lets core's memoisation decide whether a sort
+ * is owed; the gate is element-wise, so a key that moved without crossing a
+ * neighbour commits nothing.
+ */
+class SortedQueryCell extends QueryCellBase<readonly Entity[], SortedQueryResult> {
+  protected refresh(): boolean {
+    const committed = this.committed;
+    if (this.world[$destroyed]) {
+      if (committed === EMPTY) {
+        return false;
+      }
+      this.committed = EMPTY;
+      return true;
+    }
+    const view = this.result[$view];
+    const entities = view.ensure();
+    const count = view.length;
+    if (committed !== UNSET && count === committed.length) {
+      let i = 0;
+      while (i < count && committed[i] === entities[i]) {
+        i++;
+      }
+      if (i === count) {
+        return false;
+      }
+    }
+    if (count === 0) {
+      if (committed === EMPTY) {
+        return false;
+      }
+      this.committed = EMPTY;
+      return true;
+    }
+    const next: Entity[] = new Array(count);
+    for (let i = 0; i < count; i++) {
+      next[i] = entities[i] as Entity;
+    }
+    this.committed = __DEV__ ? Object.freeze(next) : next;
+    return true;
+  }
+}
+
+/**
+ * One enter/exit boundary per result, shared by its match and first cells. A
+ * sorted result adds `onChange` on its key trait (§C.3.6): a key that moves an
+ * entity past a neighbour crosses no boundary. That subscription promotes no
+ * trait that `sortBy` had not already promoted (SPEC §6.7).
+ */
 class QueryWatch {
   public readonly cells: QueryCellBase<unknown>[] = [];
 
   private active = 0;
   private offEnter = NOOP;
   private offExit = NOOP;
+  private offChange = NOOP;
 
+  /**
+   * `boundary` is the query whose enter/exit delimit the match set — for a
+   * sorted result over a query that does not require its key trait, the
+   * narrowed base (SPEC §6.7) rather than the query itself.
+   */
   public constructor(
     private readonly registry: Registry,
-    public readonly query: QueryResult,
+    public readonly result: AnyResult,
+    private readonly boundary: QueryResult,
+    private readonly key: Trait | null,
   ) {}
 
   public find(kind: number): QueryCellBase<unknown> | undefined {
@@ -581,8 +655,11 @@ class QueryWatch {
   public activate(): void {
     if (++this.active === 1) {
       const world = this.registry.world;
-      this.offEnter = world.onEnter(this.query, this.onCross);
-      this.offExit = world.onExit(this.query, this.onCross);
+      this.offEnter = world.onEnter(this.boundary, this.onCross);
+      this.offExit = world.onExit(this.boundary, this.onCross);
+      if (this.key !== null) {
+        this.offChange = world.onChange(this.key, this.onCross);
+      }
     }
   }
 
@@ -591,10 +668,12 @@ class QueryWatch {
     if (--this.active === 0) {
       this.offEnter();
       this.offExit();
+      this.offChange();
       this.offEnter = NOOP;
       this.offExit = NOOP;
+      this.offChange = NOOP;
       if (this.cells.length === 0) {
-        this.registry.queries.delete(this.query);
+        this.registry.queries.delete(this.result);
       }
     }
   }
@@ -620,7 +699,7 @@ function canonical(trait: Trait): TraitLike {
 class Registry {
   public readonly scheduler: Scheduler;
   public readonly traits = new Map<Trait, TraitWatch>();
-  public readonly queries = new Map<QueryResult, QueryWatch>();
+  public readonly queries = new Map<AnyResult, QueryWatch>();
 
   public constructor(public readonly world: World) {
     this.scheduler = schedulerOf(world);
@@ -637,7 +716,24 @@ class Registry {
   public queryWatchOf(query: QueryResult): QueryWatch {
     let watch = this.queries.get(query);
     if (watch === undefined) {
-      this.queries.set(query, (watch = new QueryWatch(this, query)));
+      this.queries.set(query, (watch = new QueryWatch(this, query, query, null)));
+    }
+    return watch;
+  }
+
+  /** A view over a narrowed base shares that base's plan, and its boundary is the base (SPEC §6.7). */
+  public sortedWatchOf(
+    query: QueryResult,
+    terms: readonly Term[],
+    sorted: SortedQueryResult,
+    field: Field,
+  ): QueryWatch {
+    let watch = this.queries.get(sorted);
+    if (watch === undefined) {
+      const trait = field[$trait];
+      const boundary =
+        sorted[$plan] === query[$plan] ? query : this.world.query(...terms, With(trait));
+      this.queries.set(sorted, (watch = new QueryWatch(this, sorted, boundary, trait)));
     }
     return watch;
   }
@@ -752,10 +848,23 @@ export function targetCell(
  * a retarget crosses no archetype (SPEC §7.4), so such a cell also keys on the
  * target in the relation's watch.
  */
-function internQuery(world: World, terms: readonly Term[], kind: number): QueryCellBase<unknown> {
+function internQuery(
+  world: World,
+  terms: readonly Term[],
+  kind: number,
+  field: Field | null,
+  direction: 'asc' | 'desc',
+): QueryCellBase<unknown> {
   const query = world.query(...terms);
   const registry = registryOf(world);
-  const watch = registry.queryWatchOf(query);
+  let watch: QueryWatch;
+  let sorted: SortedQueryResult | null = null;
+  if (field === null) {
+    watch = registry.queryWatchOf(query);
+  } else {
+    sorted = query.sortBy(field, direction);
+    watch = registry.sortedWatchOf(query, terms, sorted, field);
+  }
   let cell = watch.find(kind);
   if (cell === undefined) {
     let relation: TraitWatch | null = null;
@@ -766,10 +875,13 @@ function internQuery(world: World, terms: readonly Term[], kind: number): QueryC
         relation = registry.watchOf((terms[i] as TraitInstance)[$trait]);
       }
     }
+    const id = entityId(target);
     cell =
-      kind === QUERY
-        ? new QueryCell(world, query, watch, kind, relation, entityId(target))
-        : new QueryFirstCell(world, query, watch, kind, relation, entityId(target));
+      kind === FIRST
+        ? new QueryFirstCell(world, sorted ?? query, watch, kind, relation, id)
+        : sorted === null
+          ? new QueryCell(world, query, watch, kind, relation, id)
+          : new SortedQueryCell(world, sorted, watch, kind, relation, id);
     watch.cells.push(cell);
   }
   return cell;
@@ -777,12 +889,37 @@ function internQuery(world: World, terms: readonly Term[], kind: number): QueryC
 
 /** The match set, recomputed on enter/exit only. Order is not stable (§C.4.4). */
 export function queryCell(world: World, terms: readonly Term[]): Cell<readonly Entity[]> {
-  return internQuery(world, terms, QUERY) as Cell<readonly Entity[]>;
+  return internQuery(world, terms, QUERY, null, 'asc') as Cell<readonly Entity[]>;
 }
 
 /** `query.first`, committed as an entity so membership churn behind it is free. */
 export function queryFirstCell(world: World, terms: readonly Term[]): Cell<Entity | undefined> {
-  return internQuery(world, terms, FIRST) as Cell<Entity | undefined>;
+  return internQuery(world, terms, FIRST, null, 'asc') as Cell<Entity | undefined>;
+}
+
+/**
+ * `world.query(...terms).sortBy(field, direction)`, interned on the sorted
+ * result core memoises (SPEC §6.7). The one cell whose order means something
+ * (§C.3.6); a key written through `chunk.markChanged` fires no observer and
+ * does not wake it (§C.11.1).
+ */
+export function sortedQueryCell(
+  world: World,
+  terms: readonly Term[],
+  field: Field,
+  direction: 'asc' | 'desc' = 'asc',
+): Cell<readonly Entity[]> {
+  return internQuery(world, terms, QUERY, field, direction) as Cell<readonly Entity[]>;
+}
+
+/** The first entity in sorted order — the extremum by the key. */
+export function sortedQueryFirstCell(
+  world: World,
+  terms: readonly Term[],
+  field: Field,
+  direction: 'asc' | 'desc' = 'asc',
+): Cell<Entity | undefined> {
+  return internQuery(world, terms, FIRST, field, direction) as Cell<Entity | undefined>;
 }
 
 /** The entities whose exclusive `relation` targets `entity`: `world.query(relation(entity))`. */

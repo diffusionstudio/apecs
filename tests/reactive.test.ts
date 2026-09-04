@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { Not, Relation, Trait, World, f32, str } from '../src/index';
+import { Not, Relation, Trait, World, f32, str, type Entity } from '../src/index';
 import { $options } from '../src/internal';
 import {
   childrenCell,
@@ -13,6 +13,8 @@ import {
   hasCell,
   queryCell,
   queryFirstCell,
+  sortedQueryCell,
+  sortedQueryFirstCell,
   targetCell,
   traitCell,
   type Cell,
@@ -27,6 +29,7 @@ const Transform = new Trait({ pos: { x: 0, y: 0 }, scale: 1 });
 const Mesh = new Trait(() => ({ n: 0 }));
 const IsActive = new Trait();
 const Score = new Trait({ value: 0 });
+const SortIndex = new Trait({ value: 0 });
 const ChildOf = new Relation(undefined, { exclusive: true });
 const Likes = new Relation({ amount: 0 });
 
@@ -380,6 +383,218 @@ describe('the value gate (§C.3.2)', () => {
     world.add(c, ChildOf(b));
     expect(seen).toEqual([[]]);
 
+    world.destroy();
+  });
+});
+
+describe('sorted cells (§C.3.6)', () => {
+  /** Three entities keyed 1, 2, 3, spawned out of order. */
+  function keyed(world: World): [Entity, Entity, Entity] {
+    const c = world.spawn(SortIndex({ value: 3 }), Position);
+    const a = world.spawn(SortIndex({ value: 1 }), Position);
+    const b = world.spawn(SortIndex({ value: 2 }), Position);
+    return [a, b, c];
+  }
+
+  test('reads the sorted order and re-commits when a key crosses a neighbour', () => {
+    const world = syncWorld();
+    const [a, b, c] = keyed(world);
+    const cell = sortedQueryCell(world, [SortIndex], SortIndex.value);
+    const { seen } = watch(cell);
+    expect(cell.value()).toEqual([a, b, c]);
+
+    world.set(c, SortIndex.value, 0);
+    expect(seen).toEqual([[c, a, b]]);
+
+    world.set(a, SortIndex.value, 5);
+    expect(seen).toEqual([
+      [c, a, b],
+      [c, b, a],
+    ]);
+
+    world.destroy();
+  });
+
+  test('a key change that keeps the order commits nothing', () => {
+    const world = syncWorld();
+    const [a, b, c] = keyed(world);
+    const cell = sortedQueryCell(world, [SortIndex], SortIndex.value);
+    const { seen } = watch(cell);
+    const before = cell.value();
+
+    world.set(b, SortIndex.value, 2);
+    world.set(b, SortIndex.value, 2.5);
+    world.set(c, SortIndex.value, 10);
+    world.set(a, SortIndex.value, -1);
+    expect(seen).toEqual([]);
+    expect(cell.value()).toBe(before);
+    expect(before).toEqual([a, b, c]);
+
+    world.destroy();
+  });
+
+  test('descending is its own cell with the reverse order', () => {
+    const world = syncWorld();
+    const [a, b, c] = keyed(world);
+    const asc = sortedQueryCell(world, [SortIndex], SortIndex.value, 'asc');
+    const desc = sortedQueryCell(world, [SortIndex], SortIndex.value, 'desc');
+    expect(desc).not.toBe(asc);
+    expect(desc.value()).toEqual([c, b, a]);
+
+    const { seen } = watch(desc);
+    world.set(a, SortIndex.value, 9);
+    expect(seen).toEqual([[a, c, b]]);
+
+    world.destroy();
+  });
+
+  test('membership changes land the entity in its sorted position', () => {
+    const world = syncWorld();
+    const [a, b, c] = keyed(world);
+    const cell = sortedQueryCell(world, [SortIndex], SortIndex.value);
+    const { seen } = watch(cell);
+
+    const d = world.spawn(SortIndex({ value: 1.5 }));
+    expect(seen).toEqual([[a, d, b, c]]);
+
+    world.despawn(b);
+    expect(seen).toEqual([
+      [a, d, b, c],
+      [a, d, c],
+    ]);
+
+    world.remove(a, SortIndex);
+    expect(cell.value()).toEqual([d, c]);
+
+    world.destroy();
+  });
+
+  test('a system sorting the view between the write and the flush hides nothing', () => {
+    const world = new World();
+    const frames = fakeFrames();
+    const [a, b, c] = keyed(world);
+    const cell = sortedQueryCell(world, [SortIndex], SortIndex.value);
+    const { seen } = watch(cell);
+    expect(cell.value()).toEqual([a, b, c]);
+    const sorted = world.query(SortIndex).sortBy(SortIndex.value);
+
+    world.set(c, SortIndex.value, 0);
+    expect(frames).toHaveLength(1);
+    world.step();
+    expect(sorted.isDirty).toBe('resort');
+    expect([...sorted]).toEqual([c, a, b]);
+    expect(sorted.isDirty).toBe('clean');
+
+    frames[0]();
+    expect(seen).toEqual([[c, a, b]]);
+
+    world.destroy();
+  });
+
+  test('a key written every frame costs one notification per reorder', () => {
+    const world = new World();
+    const frames = fakeFrames();
+    const [a, b, c] = keyed(world);
+    const { seen } = watch(sortedQueryCell(world, [SortIndex], SortIndex.value));
+
+    for (let i = 0; i < 10; i++) {
+      world.set(a, SortIndex.value, 1 + i * 0.01);
+    }
+    world.set(a, SortIndex.value, 4);
+    expect(frames).toHaveLength(1);
+    frames[0]();
+
+    expect(seen).toEqual([[b, c, a]]);
+
+    world.destroy();
+  });
+
+  test('a query without the key trait is narrowed to entities that carry it', () => {
+    const world = syncWorld();
+    const [a, b, c] = keyed(world);
+    const bare = world.spawn(Position);
+    const cell = sortedQueryCell(world, [Position], SortIndex.value);
+    const { seen } = watch(cell);
+    expect(cell.value()).toEqual([a, b, c]);
+
+    world.add(bare, SortIndex({ value: 0 }));
+    expect(seen).toEqual([[bare, a, b, c]]);
+
+    world.remove(bare, SortIndex);
+    expect(seen).toEqual([
+      [bare, a, b, c],
+      [a, b, c],
+    ]);
+
+    world.set(bare, Position.x, 1);
+    expect(seen).toHaveLength(2);
+
+    world.destroy();
+  });
+
+  test('first: only a new leader notifies', () => {
+    const world = syncWorld();
+    const [a, b, c] = keyed(world);
+    const cell = sortedQueryFirstCell(world, [SortIndex], SortIndex.value);
+    const { seen } = watch(cell);
+    expect(cell.value()).toBe(a);
+
+    world.set(c, SortIndex.value, 1.5);
+    world.spawn(SortIndex({ value: 7 }));
+    world.despawn(b);
+    expect(seen).toEqual([]);
+
+    world.set(c, SortIndex.value, 0);
+    expect(seen).toEqual([c]);
+
+    world.despawn(c);
+    expect(seen).toEqual([c, a]);
+
+    expect(sortedQueryFirstCell(world, [SortIndex], SortIndex.value, 'desc').value()).not.toBe(a);
+
+    world.destroy();
+  });
+
+  test('cells intern on the sorted result and share its wake', () => {
+    const world = syncWorld();
+    keyed(world);
+    const cell = sortedQueryCell(world, [SortIndex], SortIndex.value);
+    const first = sortedQueryFirstCell(world, [SortIndex], SortIndex.value);
+    const off = cell.subscribe(() => {});
+
+    expect(sortedQueryCell(world, [SortIndex], SortIndex.value)).toBe(cell);
+    expect(sortedQueryCell(world, [SortIndex], SortIndex.value, 'asc')).toBe(cell);
+    expect(sortedQueryCell(world, [SortIndex], SortIndex.value, 'desc')).not.toBe(cell);
+    expect(first).not.toBe(cell);
+    expect(queryCell(world, [SortIndex])).not.toBe(cell);
+    expect(SortIndex[$options].track).toBe(true);
+
+    off();
+    expect(sortedQueryCell(world, [SortIndex], SortIndex.value)).not.toBe(cell);
+
+    world.destroy();
+  });
+
+  test('a destroyed world flushes to empty', async () => {
+    const world = new World();
+    setFlush(world, 'microtask');
+    keyed(world);
+    const list = watch(sortedQueryCell(world, [SortIndex], SortIndex.value));
+    const first = watch(sortedQueryFirstCell(world, [SortIndex], SortIndex.value));
+
+    world.destroy();
+    await Promise.resolve();
+
+    expect(list.seen).toEqual([[]]);
+    expect(first.seen).toEqual([undefined]);
+  });
+
+  devOnly('the committed order is frozen', () => {
+    const world = syncWorld();
+    keyed(world);
+    expect(Object.isFrozen(sortedQueryCell(world, [SortIndex], SortIndex.value).value())).toBe(
+      true,
+    );
     world.destroy();
   });
 });

@@ -94,6 +94,24 @@ export function createQueryFirst(...terms: Term[]): () => Entity | undefined {
   return todo(terms);
 }
 
+/** `sortBy` behind a cell: the one factory whose order means something (§C.3.6). */
+export function createSortedQuery(
+  terms: Term[],
+  field: Field,
+  direction?: 'asc' | 'desc',
+): () => readonly Entity[] {
+  return todo(terms, field, direction);
+}
+
+/** The extremum by the key — commits one entity, so reshuffles behind it are free. */
+export function createSortedQueryFirst(
+  terms: Term[],
+  field: Field,
+  direction?: 'asc' | 'desc',
+): () => Entity | undefined {
+  return todo(terms, field, direction);
+}
+
 /** The target of an exclusive relation; `NULL_ENTITY` maps to `undefined`. */
 export function createTarget(entity: Entity, relation: TraitLike): () => Entity | undefined {
   return todo(entity, relation);
