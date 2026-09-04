@@ -245,9 +245,31 @@ Stage gate: **6-B complete.**
 
 ---
 
+## Stage 8 — Accessors
+
+Stage gate: **7-B complete.**
+
+### 8-A [COMPLETED] — Tests
+
+| ID       | Test task                                                                                                                                                                                                  |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **T8.1** | `world.accessor` — get/set parity with `world.get`/`set` for every field kind, nested fields, AoS traits, sparse traits and exclusive-relation fields; memoised per field; dev rejection of tags, struct traits and non-exclusive relations (§4.5, §3.3) |
+| **T8.2** | Accessor follows the entity — archetype moves, id recycling into another archetype, `compact()`, `clear()`, pages appended after resolution, a world that gains archetypes later (§4.5, §10.2)             |
+| **T8.3** | `set` through an accessor stamps ticks, fires `onChange`, is seen by `Changed()`; dev liveness / world / has-trait assertions, absent in prod (§4.5, §8.1, §8.3, §12.2)                                   |
+| **T8.4** | Alloc + surface: zero heap delta per pass after warmup; `accessor` on the prototype; `Accessor<V>` typed from the field, struct traits rejected at the type level (§4.5, §11, §12.2, §14)                 |
+
+### 8-B [COMPLETED] — Implementation
+
+| ID       | Impl task                                                                         | →                |
+| -------- | --------------------------------------------------------------------------------- | ---------------- |
+| **I8.1** | `Accessor` — dense per-archetype column table, sparse-store variant, memoisation | T8.1, T8.2, T8.3 |
+| **I8.2** | Public type + export, `random-access` benchmark and CI budget, compare adapter raw tier | T8.4, I8.1       |
+
+---
+
 ## Critical path
 
-`0-A → 0-B → 1-A → 1-B → 2-A → 2-B → 3-A → 3-B → 4-A → 4-B → 5-A → 5-B → 6-A → 6-B → 7-A → 7-B`
+`0-A → 0-B → 1-A → 1-B → 2-A → 2-B → 3-A → 3-B → 4-A → 4-B → 5-A → 5-B → 6-A → 6-B → 7-A → 7-B → 8-A → 8-B`
 
 Inside phase A every task is independent — write them all in parallel. Inside phase B the
 chains that matter are:

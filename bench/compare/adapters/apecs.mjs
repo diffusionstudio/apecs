@@ -25,7 +25,7 @@ const DT = 1 / 60
 export const name = 'apecs'
 export const version = '0.1.0 (dist)'
 export const notes =
-  'Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays.'
+  'Archetype + SoA typed columns. `each` is the idiom; `chunks` hands back the raw arrays, `accessor` a resolved field for access by handle.'
 
 function packedWorld(entities) {
   const world = new World()
@@ -176,6 +176,20 @@ export const benchmarks = {
       for (let i = 0; i < entities; i++) {
         const e = live[order[i]]
         world.set(e, Position.x, world.get(e, Position.x) + 1)
+      }
+    }
+  },
+
+  'random_access/raw': ({ entities }) => {
+    const world = new World({ maxEntities: entities + 16 })
+    const live = new Float64Array(entities)
+    for (let i = 0; i < entities; i++) live[i] = world.spawn(Position)
+    const order = permutation(entities)
+    const x = world.accessor(Position.x)
+    return () => {
+      for (let i = 0; i < entities; i++) {
+        const e = live[order[i]]
+        x.set(e, x.get(e) + 1)
       }
     }
   },

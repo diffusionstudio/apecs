@@ -81,3 +81,18 @@ export function sortable(n: number): { world: World; entities: Entity[] } {
   }
   return { world, entities }
 }
+
+/** A deterministic shuffle, so every run walks the same "random" order. */
+export function permutation(n: number): Uint32Array {
+  const order = new Uint32Array(n)
+  for (let i = 0; i < n; i++) order[i] = i
+  let state = 0x9e3779b9
+  for (let i = n - 1; i > 0; i--) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    const j = state % (i + 1)
+    const t = order[i]
+    order[i] = order[j]
+    order[j] = t
+  }
+  return order
+}

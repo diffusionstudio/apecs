@@ -32,8 +32,9 @@ export class Column {
   /** Scalar answer to "did anything in this column change?" (SPEC §8.3). */
   public lastWriteTick = 0
 
-  private readonly shift: number
-  private readonly mask: number
+  /** `row >>> shift` is the page, `row & mask` the slot in it; callers on hot paths inline this. */
+  readonly shift: number
+  readonly mask: number
   private readonly boxed: boolean
 
   public constructor(field: Field, pageSize: number) {

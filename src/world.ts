@@ -1,3 +1,4 @@
+import { accessorField, createAccessor, type Accessor, type AccessorHost } from './accessor'
 import { Archetype, ArchetypeGraph } from './archetype'
 import type { Column } from './column'
 import { PAGE_SIZE } from './column'
@@ -44,6 +45,7 @@ import {
   $queries,
   $relation,
   $relations,
+  $sparse,
   $target,
   $traits,
   $trait,
@@ -54,6 +56,7 @@ import type { Init, Value } from './types'
 import { Ticks } from './ticks'
 import type { Trait, TraitInstance } from './trait'
 import {
+  decode,
   initTrait,
   readStruct,
   targetOf,
@@ -133,12 +136,6 @@ function subscribe(map: Map<Trait, ObserverFn[]>, item: TraitLike, fn: ObserverF
   return append(list, fn)
 }
 
-/** The trait `subject` addresses: a field's owner, a pair for a non-exclusive target. */
-function subjectTrait(subject: Subject): Trait {
-  if (typeof subject === 'function') return subject
-  return $index in subject ? (subject as Field)[$trait] : traitOf(subject as TraitInstance)
-}
-
 /**
  * An isolated container of entities, archetypes and trait storage. Every method
  * lives on the prototype, and every piece of internal state is symbol- or
@@ -166,6 +163,8 @@ export class World {
 
   #stores = new Map<number, SparseStore>()
   #storeList: SparseStore[] = []
+  #accessors = new Map<Field, Accessor<unknown>>()
+  #host: AccessorHost | null = null
   #destroyed = false
 
   readonly #ticks = new Ticks()
@@ -233,7 +232,7 @@ export class World {
     for (let i = 0; i < items.length; i++) {
       const trait = traitOf(items[i])
       const value = valueOf(items[i])
-      if (trait[$options].storage === 'sparse') this.#store(trait).add(id, value, tick)
+      if (trait[$sparse]) this.#store(trait).add(id, value, tick)
       else {
         const columns = archetype.columnsOf.get(trait[$id])
         initTrait(columns, row, trait, value, tick)
@@ -274,7 +273,7 @@ export class World {
     for (let i = 0; i < items.length; i++) {
       const trait = traitOf(items[i])
       const value = valueOf(items[i])
-      if (trait[$options].storage === 'sparse') {
+      if (trait[$sparse]) {
         const store = this.#store(trait)
         for (let k = 0; k < n; k++) store.add(entityId(batch[k]), value, tick)
       } else {
@@ -385,25 +384,13 @@ export class World {
   public get<S extends Schema>(trait: TraitLike<S>, out?: Value<S>): Value<S>
   public get<V>(field: Field<V>): V
   public get(target: Entity | Subject, spec?: Subject | object, out?: object): any {
-    const world = typeof target !== 'number'
-    const entity = world ? this.entity : (target as Entity)
-    const subject = (world ? target : spec) as Subject
-    const into = (world ? spec : out) as Record<string, unknown> | undefined
-    const id = entityId(entity)
-    if (__DEV__) this.#assertAlive(entity, id)
-
-    const trait = subjectTrait(subject)
-    const columns = this.#columnsOf(trait, id)
-    if (__DEV__) this.#assertReadable(trait, columns)
-    const row = this.#rowOf(trait, id)
-
-    if (typeof subject !== 'function' && $index in subject) {
-      const field = subject as Field
-      const raw = columns![field[$index]].get(row)
-      return field.kind === 'bool' ? raw !== 0 : raw
-    }
-    if (trait[$kind] === 'aos') return columns![0].get(row)
-    return readStruct(trait[$plan], columns!, row, into ?? {})
+    if (typeof target !== 'number') return this.get(this.entity, target as Trait, spec as object)
+    const id = entityId(target)
+    if (__DEV__) this.#assertAlive(target, id)
+    const subject = spec as Subject
+    if (typeof subject !== 'function' && $index in subject)
+      return this.#getField(id, subject as Field)
+    return this.#getTrait(id, traitOf(subject as TraitLike), out)
   }
 
   public set<S extends Schema>(entity: Entity, trait: TraitLike<S>, value: Init<S>): void
@@ -411,30 +398,34 @@ export class World {
   public set<S extends Schema>(trait: TraitLike<S>, value: Init<S>): void
   public set<V>(field: Field<V>, value: V): void
   public set(target: Entity | Subject, spec?: Subject | unknown, value?: unknown): void {
-    const world = typeof target !== 'number'
-    const entity = world ? this.entity : (target as Entity)
-    const subject = (world ? target : spec) as Subject
-    const written = world ? spec : value
-    const id = entityId(entity)
-    if (__DEV__) this.#assertAlive(entity, id)
+    if (typeof target !== 'number') return this.set(this.entity, target as Trait, spec)
+    const id = entityId(target)
+    if (__DEV__) this.#assertAlive(target, id)
+    const subject = spec as Subject
+    if (typeof subject !== 'function' && $index in subject)
+      this.#setField(target, id, subject as Field, value)
+    else this.#setTrait(target, id, traitOf(subject as TraitLike), value)
+  }
 
-    const trait = subjectTrait(subject)
-    const columns = this.#columnsOf(trait, id)
-    if (__DEV__) this.#assertReadable(trait, columns)
-    const row = this.#rowOf(trait, id)
-    const tick = this.#ticks.tick
-
-    if (typeof subject !== 'function' && $index in subject) {
-      const column = columns![(subject as Field)[$index]]
-      column.set(row, written)
-      column.stamp(row, tick)
-    } else if (trait[$kind] === 'aos') {
-      columns![0].set(row, written)
-      columns![0].stamp(row, tick)
-    } else {
-      writeStruct(trait[$plan], columns!, row, written as Record<string, unknown>, tick)
+  public accessor<V>(field: Field<V>): Accessor<V>
+  public accessor<S extends () => unknown>(trait: Trait<S>): Accessor<ReturnType<S>>
+  public accessor(subject: Field | Trait): Accessor<unknown> {
+    if (__DEV__) this.#assertNotDestroyed()
+    const field = accessorField(subject)
+    let accessor = this.#accessors.get(field)
+    if (accessor === undefined) {
+      this.#host ??= {
+        entities: this[$entities],
+        archetypes: this[$archetypes].list,
+        ticks: this.#ticks,
+        changed: this.#onChange,
+        wrote: (entity, id, trait) => this.#emitChange(entity, id, trait),
+        store: (trait) => this.#store(trait),
+        assertAlive: (entity, id) => this.#assertAlive(entity, id),
+      }
+      this.#accessors.set(field, (accessor = createAccessor(this.#host, field)))
     }
-    this.#wrote(entity, id, trait)
+    return accessor
   }
 
   /** Stamps the change tick without touching the data (SPEC §8.3). */
@@ -448,9 +439,9 @@ export class World {
       assert(this.#hasTrait(id, trait), 'this entity does not have that trait')
     }
 
-    const columns = this.#columnsOf(trait, id)
+    const row = this.#rowOf(trait, id)
+    const columns = this.#columnsAt(trait, id, row)
     if (columns !== undefined) {
-      const row = this.#rowOf(trait, id)
       const tick = this.#ticks.tick
       for (let i = 0; i < columns.length; i++) columns[i].stamp(row, tick)
     }
@@ -588,6 +579,7 @@ export class World {
     this[$relations].clear()
     this.#stores.clear()
     this.#storeList.length = 0
+    this.#accessors.clear()
     this.#onAdd.clear()
     this.#onRemove.clear()
     this.#onChange.clear()
@@ -656,7 +648,7 @@ export class World {
   }
 
   #hasTrait(id: number, trait: Trait): boolean {
-    if (trait[$options].storage === 'sparse') {
+    if (trait[$sparse]) {
       const store = this.#stores.get(trait[$id])
       return store !== undefined && store.slotOf(id) >= 0
     }
@@ -742,7 +734,10 @@ export class World {
   }
 
   #wrote(entity: Entity, id: number, trait: Trait): void {
-    if (this.#onChange.size === 0) return
+    if (this.#onChange.size !== 0) this.#emitChange(entity, id, trait)
+  }
+
+  #emitChange(entity: Entity, id: number, trait: Trait): void {
     const target = isExclusive(trait) ? this.#targetOf(id, trait) : NULL_ENTITY
     this.#emit(this.#onChange, entity, trait, target)
   }
@@ -781,19 +776,94 @@ export class World {
     return boundary
   }
 
-  /** The columns holding `trait` for `id`, or undefined when it does not have it. */
-  #columnsOf(trait: Trait, id: number): Column[] | undefined {
-    if (trait[$options].storage !== 'sparse') {
-      return this.#archetypeOf(id).columnsOf.get(trait[$id])
-    }
-    const store = this.#stores.get(trait[$id])
-    return store !== undefined && store.slotOf(id) >= 0 ? store.columns : undefined
+  /** The row `id` occupies for `trait`, then the columns holding it: two calls rather than one allocation. */
+  #rowOf(trait: Trait, id: number): number {
+    return trait[$sparse] ? this.#sparseRow(trait, id) : this[$entities].rows[id]
   }
 
-  #rowOf(trait: Trait, id: number): number {
-    return trait[$options].storage === 'sparse'
-      ? this.#stores.get(trait[$id])!.slotOf(id)
-      : this[$entities].rows[id]
+  /** `undefined` when `id` lacks the trait; `row` is what `#rowOf` returned. */
+  #columnsAt(trait: Trait, id: number, row: number): Column[] | undefined {
+    return trait[$sparse]
+      ? this.#sparseColumns(trait, row)
+      : this.#archetypeOf(id).columnsOf.get(trait[$id])
+  }
+
+  #sparseRow(trait: Trait, id: number): number {
+    const store = this.#stores.get(trait[$id])
+    return store === undefined ? -1 : store.slotOf(id)
+  }
+
+  #sparseColumns(trait: Trait, row: number): Column[] | undefined {
+    return row < 0 ? undefined : this.#stores.get(trait[$id])!.columns
+  }
+
+  /**
+   * One column of a table trait, page math inlined. This and `#setField` are
+   * the hot halves of `get` / `set`; everything else is a call out, so the
+   * pair stays inside the inlining budget of a caller's loop (SPEC §12.2).
+   */
+  #getField(id: number, field: Field): unknown {
+    const trait = field[$trait]
+    if (trait[$sparse]) return this.#getSparseField(id, field)
+    const entities = this[$entities]
+    const columns = this[$archetypes].list[entities.archetypes[id]].columnsOf.get(trait[$id])
+    if (__DEV__) this.#assertReadable(trait, columns)
+    const row = entities.rows[id]
+    const column = columns![field[$index]]
+    return decode(field, (column.pages[row >>> column.shift] as unknown[])[row & column.mask])
+  }
+
+  #setField(entity: Entity, id: number, field: Field, value: unknown): void {
+    const trait = field[$trait]
+    if (trait[$sparse]) return this.#setSparseField(entity, id, field, value)
+    const entities = this[$entities]
+    const columns = this[$archetypes].list[entities.archetypes[id]].columnsOf.get(trait[$id])
+    if (__DEV__) this.#assertReadable(trait, columns)
+    const row = entities.rows[id]
+    const column = columns![field[$index]]
+    ;(column.pages[row >>> column.shift] as unknown[])[row & column.mask] = value
+    column.stamp(row, this.#ticks.tick)
+    this.#wrote(entity, id, trait)
+  }
+
+  #getSparseField(id: number, field: Field): unknown {
+    const trait = field[$trait]
+    const row = this.#sparseRow(trait, id)
+    const columns = this.#sparseColumns(trait, row)
+    if (__DEV__) this.#assertReadable(trait, columns)
+    return decode(field, columns![field[$index]].get(row))
+  }
+
+  #setSparseField(entity: Entity, id: number, field: Field, value: unknown): void {
+    const trait = field[$trait]
+    const row = this.#sparseRow(trait, id)
+    const columns = this.#sparseColumns(trait, row)
+    if (__DEV__) this.#assertReadable(trait, columns)
+    const column = columns![field[$index]]
+    column.set(row, value)
+    column.stamp(row, this.#ticks.tick)
+    this.#wrote(entity, id, trait)
+  }
+
+  /** The whole-trait copy, or the AoS reference (SPEC §4.4). */
+  #getTrait(id: number, trait: Trait, into: object | undefined): unknown {
+    const row = this.#rowOf(trait, id)
+    const columns = this.#columnsAt(trait, id, row)
+    if (__DEV__) this.#assertReadable(trait, columns)
+    if (trait[$kind] === 'aos') return columns![0].get(row)
+    return readStruct(trait[$plan], columns!, row, (into ?? {}) as Record<string, unknown>)
+  }
+
+  #setTrait(entity: Entity, id: number, trait: Trait, value: unknown): void {
+    const row = this.#rowOf(trait, id)
+    const columns = this.#columnsAt(trait, id, row)
+    if (__DEV__) this.#assertReadable(trait, columns)
+    const tick = this.#ticks.tick
+    if (trait[$kind] === 'aos') {
+      columns![0].set(row, value)
+      columns![0].stamp(row, tick)
+    } else writeStruct(trait[$plan], columns!, row, value as Record<string, unknown>, tick)
+    this.#wrote(entity, id, trait)
   }
 
   #store(trait: Trait): SparseStore {
@@ -822,7 +892,7 @@ export class World {
     for (let i = start; i < items.length; i++) {
       const trait = traitOf(items[i])
       if (__DEV__) this.#assertAddable(trait, targetOf(items[i]))
-      if (trait[$options].storage === 'sparse') continue
+      if (trait[$sparse]) continue
       const relation = (trait as Pair)[$relation]
       if (relation !== undefined) {
         const bit = traits.register(relation)
@@ -850,7 +920,7 @@ export class World {
       const item = items[i]
       const trait = traitOf(item)
       const value = valueOf(item)
-      if (trait[$options].storage === 'sparse') {
+      if (trait[$sparse]) {
         if (this.#store(trait).add(id, value, tick) && announce) (fresh ??= []).push(item)
       } else if (!maskHas(from.mask, traits.localId(trait))) {
         const columns = to.columnsOf.get(trait[$id])
@@ -957,7 +1027,7 @@ export class World {
     for (let i = start; i < items.length; i++) {
       const item = items[i]
       const trait = traitOf(item)
-      if (trait[$options].storage === 'sparse') {
+      if (trait[$sparse]) {
         const store = this.#stores.get(trait[$id])
         if (store !== undefined && store.remove(id)) ticks.logRemoved(entity, trait[$id])
         continue

@@ -51,6 +51,7 @@ const WORLD_METHODS = [
   'has',
   'get',
   'set',
+  'accessor',
   'changed',
   'target',
   'targets',
@@ -162,6 +163,20 @@ describe('world surface (§14)', () => {
     for (const name of WORLD_METHODS) {
       expect(typeof World.prototype[name], name).toBe('function')
     }
+  })
+
+  test('an accessor carries get and set and nothing else (§4.5)', () => {
+    const world = new World()
+    const Position = new Trait({ x: f32(0) })
+    const entity = world.spawn(Position({ x: 2 }))
+    const px = world.accessor(Position.x)
+
+    expect(typeof px.get).toBe('function')
+    expect(typeof px.set).toBe('function')
+    expect(px.get(entity)).toBe(2)
+    expect(Object.keys(px).filter((key) => key === 'get' || key === 'set')).toEqual([])
+
+    world.destroy()
   })
 
   test('entity and tick are accessors, not methods', () => {

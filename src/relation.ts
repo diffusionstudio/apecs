@@ -11,6 +11,7 @@ import {
   $plan,
   $relation,
   $schema,
+  $sparse,
   $target,
   $targetField,
   $trait,
@@ -140,6 +141,7 @@ export function pairOf(relation: Relation, target: Entity): Pair {
       [$schema]: relation[$schema],
       [$options]: relation[$options],
       [$plan]: relation[$plan],
+      [$sparse]: relation[$sparse],
       [$relation]: relation,
       [$target]: target,
     } as unknown as Pair

@@ -24,6 +24,7 @@ export type { Entity } from './entity'
 
 export { World } from './world'
 export type { EntityBatch, ObserverFn, Subject, WorldOptions } from './world'
+export type { Accessor } from './accessor'
 
 export type { QueryResult } from './query'
 export type { Comparator, DirtyLevel, SortedQueryResult } from './sorted'

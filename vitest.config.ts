@@ -1,6 +1,21 @@
+import { fileURLToPath } from 'node:url'
+
 import { defineConfig } from 'vitest/config'
 
 const include = ['tests/**/*.test.ts']
+
+/**
+ * The bench project resolves `src/index` to the built bundle. Vite's SSR
+ * transform leaves `__DEV__` as a global read and turns every import into a
+ * getter on the module object — invisible in a test, a multiple in a
+ * per-entity loop. `npm run bench` builds first.
+ */
+const bundle = [
+  {
+    find: /^(\.\.\/)+src\/index$/,
+    replacement: fileURLToPath(new URL('./dist/index.js', import.meta.url)),
+  },
+]
 
 export default defineConfig({
   test: {
@@ -32,6 +47,7 @@ export default defineConfig({
         // The benchmarks measure what ships, so they run with the assertions
         // compiled out, like the published bundle (SPEC §12.1).
         define: { __DEV__: 'false' },
+        resolve: { alias: bundle },
         test: {
           name: 'bench',
           include: [],

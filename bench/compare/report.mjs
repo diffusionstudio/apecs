@@ -154,7 +154,7 @@ w(
 w('raw arrays are the API. becsy has no raw tier — everything goes through a system.')
 w()
 w(
-  '| Benchmark | apecs `each` | apecs `chunks` | koota `updateEach` | koota `useStores` | bitECS | becsy |',
+  '| Benchmark | apecs `each` | apecs `chunks` / `accessor` | koota `updateEach` | koota `useStores` | bitECS | becsy |',
 )
 w('| --- | --- | --- | --- | --- | --- | --- |')
 for (const bench of Object.keys(BENCHMARKS)) {

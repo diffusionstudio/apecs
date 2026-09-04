@@ -183,6 +183,29 @@ world.set(e, Position.x, 5)
 
 `world.get` on a struct trait returns a **copy**, not a live view. It is a cold-path convenience: use it in UI, editors, and React bindings, not in systems.
 
+### 4.5 Accessors — resolved per-entity access
+
+`world.get` / `world.set` resolve the subject on every call: field → trait → storage mode → archetype → column → page. An **accessor** does that resolution once and keeps it, so per-entity access from outside a query costs two indirections instead of a lookup chain. It is the per-entity counterpart of `chunks` (§6.6): the escape hatch for pathfinding, physics callbacks, networking — anything that addresses entities by handle in an order no query can provide.
+
+```ts
+const px = world.accessor(Position.x) // hoist it, like a query
+px.get(e) // number
+px.set(e, 5) // stamps the change tick and fires onChange, exactly like world.set
+```
+
+```ts
+interface Accessor<V> {
+  get(entity: Entity): V
+  set(entity: Entity, value: V): void
+}
+```
+
+- The subject is a **field**, or an AoS trait, which is its own single field (§3.3). A struct trait has no single value to hand back; a tag has none at all; a non-exclusive relation is addressed through a target (§7.3). Dev builds reject all three at creation.
+- Accessors are **memoised per world and field**: `world.accessor(Position.x)` returns the same object every time, so calling it inline allocates nothing after the first call.
+- The accessor follows the entity: through archetype moves, id recycling, `compact()`, `clear()`, and the pages a later spawn appends. It never returns a stale value.
+- `get` and `set` allocate nothing. Dev builds check liveness, world membership, and that the entity holds the trait; production builds check nothing, like `chunks`.
+- A sparse trait's accessor (§3.5) resolves to its store — one indirection, the same as `world.get`.
+
 ---
 
 ## 5. Worlds
@@ -790,15 +813,16 @@ Requirements the implementation must satisfy:
 
 Targets, not measurements — the spec commits to publishing the numbers, and to failing CI on regression beyond a threshold.
 
-| Benchmark                                              | Target                                                                              |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `packed-5` (5 traits, 1 000 entities, iterate all)     | ≥ parity with the fastest JS ECS measured                                           |
-| `simple-iter` (100 000 entities, 2 traits, arithmetic) | within 1.5× of a hand-written typed-array loop via `each`; within 1.1× via `chunks` |
-| `frag-iter` (26 archetypes, 100 000 entities)          | linear in matching archetypes, no per-archetype fixed cost above ~200ns             |
-| `entity-cycle` (spawn/despawn 100 000)                 | no allocation after warmup; steady-state GC pressure ≈ 0                            |
-| `add-remove` (100 000 trait add + remove)              | two `Map` lookups plus one row move per operation                                   |
-| `sorted-static` (100 000 entities, sort key untouched) | **zero work** — one `lastWriteTick` compare per matching archetype                  |
-| `sorted-drift` (100 000 entities, 1% of keys changed)  | one O(n) key pass + adaptive re-sort; no full `n log n`                             |
+| Benchmark                                              | Target                                                                                                                                         |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packed-5` (5 traits, 1 000 entities, iterate all)     | ≥ parity with the fastest JS ECS measured                                                                                                      |
+| `simple-iter` (100 000 entities, 2 traits, arithmetic) | within 1.5× of a hand-written typed-array loop via `each`; within 1.1× via `chunks`                                                            |
+| `frag-iter` (26 archetypes, 100 000 entities)          | linear in matching archetypes, no per-archetype fixed cost above ~200ns                                                                        |
+| `entity-cycle` (spawn/despawn 100 000)                 | no allocation after warmup; steady-state GC pressure ≈ 0                                                                                       |
+| `add-remove` (100 000 trait add + remove)              | two `Map` lookups plus one row move per operation                                                                                              |
+| `sorted-static` (100 000 entities, sort key untouched) | **zero work** — one `lastWriteTick` compare per matching archetype                                                                             |
+| `sorted-drift` (100 000 entities, 1% of keys changed)  | one O(n) key pass + adaptive re-sort; no full `n log n`                                                                                        |
+| `random-access` (100 000 entities, shuffled get + set) | accessor within 25× of a flat typed array indexed by entity id — the archetype tax is three dependent loads (archetype, row, page) against one |
 
 Comparison set: bitECS, koota, becsy, and a hand-written baseline. The hand-written baseline is the one that matters.
 
@@ -916,6 +940,7 @@ world.remove(e?, ...traits)      world.removeMany(batch, ...traits)
 world.has(e?, trait): boolean
 world.get(e?, traitOrField, out?)
 world.set(e?, traitOrField, value)
+world.accessor(field): Accessor       // .get(e)  .set(e, value)
 world.changed(e, trait)
 world.target(e, relation)        world.targets(e, relation)
 

@@ -36,7 +36,7 @@ export function valueOf(item: TraitLike): unknown {
 }
 
 /** Columns hold `0`/`1`; the declared type is `boolean` (SPEC §3.2). */
-function decode(field: Field, raw: unknown): unknown {
+export function decode(field: Field, raw: unknown): unknown {
   return field.kind === 'bool' ? raw !== 0 : raw
 }
 

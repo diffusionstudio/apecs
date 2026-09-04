@@ -62,6 +62,13 @@ const BUDGETS = [
     format: (v) => `${v.toFixed(0)}× cheaper`,
   },
   {
+    name: 'random-access · accessor vs baseline',
+    spec: '25×',
+    limit: 25,
+    value: (m) => m('random-access', 'apecs accessor') / m('random-access', 'baseline'),
+    format: (v) => `${v.toFixed(2)}×`,
+  },
+  {
     // The writes themselves are not the sort's cost, so they come off first.
     name: 'sorted-drift · resort vs rebuild',
     spec: 'no full n log n',
