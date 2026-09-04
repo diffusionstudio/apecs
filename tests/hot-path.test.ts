@@ -20,6 +20,13 @@ const IsActive = new Trait();
 
 const SOURCE = join(import.meta.dirname, '../src');
 
+/** Every `.ts` under `src`, subpath entries (`src/react`, `src/solid`) included. */
+function sources(): string[] {
+  return readdirSync(SOURCE, { recursive: true }).filter(
+    (file) => typeof file === 'string' && file.endsWith('.ts'),
+  ) as string[];
+}
+
 function populated(): World {
   const world = new World({ pageSize: 8 });
   for (let i = 0; i < 20; i++) {
@@ -50,7 +57,7 @@ describe('no Proxy (§12.2, rule 3)', () => {
   });
 
   test('the source never constructs one', () => {
-    for (const file of readdirSync(SOURCE)) {
+    for (const file of sources()) {
       const source = readFileSync(join(SOURCE, file), 'utf8');
       expect(source, file).not.toMatch(/new Proxy\b/);
     }
@@ -91,7 +98,7 @@ describe('no generators (§12.2, rule 4)', () => {
   });
 
   test('the source declares no generator functions', () => {
-    for (const file of readdirSync(SOURCE)) {
+    for (const file of sources()) {
       const source = readFileSync(join(SOURCE, file), 'utf8');
       expect(source, file).not.toMatch(/function\s*\*|^\s*\*\s*\[Symbol\.iterator\]/m);
       expect(source, file).not.toMatch(/\byield\b/);

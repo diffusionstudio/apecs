@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsdown';
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/internal.ts'],
+  entry: ['src/index.ts', 'src/internal.ts', 'src/react/index.ts', 'src/solid/index.ts'],
+  // The framework bindings are subpath entries of this package; rolldown emits
+  // the core they share as one chunk both of them import.
+  deps: { neverBundle: ['react', 'solid-js'] },
   format: ['esm'],
   platform: 'neutral',
   target: 'es2022',

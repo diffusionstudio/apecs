@@ -10,6 +10,14 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./solid": {
+      "types": "./dist/solid/index.d.ts",
+      "import": "./dist/solid/index.js"
+    },
     "./internal": {
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
@@ -40,9 +48,24 @@
     "bench:compare": "cd bench/compare && node run.mjs && node report.mjs",
     "bench:compare:verify": "cd bench/compare && node verify.mjs"
   },
+  "peerDependencies": {
+    "react": ">=18",
+    "solid-js": ">=1.8"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
     "prettier": "^3.9.6",
+    "react": "^19.2.8",
+    "solid-js": "^1.9.15",
     "tsdown": "^0.21.10",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"

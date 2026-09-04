@@ -49,7 +49,38 @@ function check(condition, message) {
   }
 }
 
-const bundles = readdirSync(DIST).filter((file) => file.endsWith('.js'));
+/** Entry point → the exports it is allowed to have, in any order. */
+const ENTRIES = {
+  'index.js': SURFACE,
+  'react/index.js': ['WorldProvider', 'useWorld', 'useField', 'useTrait', 'useHas', 'useQuery'],
+  'solid/index.js': [
+    'WorldProvider',
+    'useWorld',
+    'createField',
+    'createTrait',
+    'createHas',
+    'createQuery',
+  ],
+};
+
+/** Names a module re-exports, `x as y` resolved to `y`. */
+function exportsOf(file) {
+  const source = readFileSync(join(DIST, file), 'utf8');
+  return /export\s*{([^}]*)}/
+    .exec(source)?.[1]
+    .split(',')
+    .map((name) =>
+      name
+        .trim()
+        .split(/\s+as\s+/)
+        .pop(),
+    )
+    .filter(Boolean)
+    .sort();
+}
+
+// Subpath entries live in their own directories (dist/react/index.js).
+const bundles = readdirSync(DIST, { recursive: true }).filter((file) => file.endsWith('.js'));
 check(bundles.length > 0, `no bundles in ${DIST}/ — run npm run build first`);
 
 for (const file of bundles) {
@@ -64,25 +95,28 @@ for (const file of bundles) {
   }
 }
 
-const entry = readFileSync(join(DIST, 'index.js'), 'utf8');
-const exported = /export\s*{([^}]*)}/
-  .exec(entry)?.[1]
-  .split(',')
-  .map((name) =>
-    name
-      .trim()
-      .split(/\s+as\s+/)
-      .pop(),
-  )
-  .filter(Boolean)
-  .sort();
+for (const [file, surface] of Object.entries(ENTRIES)) {
+  const exported = exportsOf(file);
+  check(exported !== undefined, `dist/${file} exports nothing`);
+  if (exported !== undefined) {
+    const expected = [...surface].sort();
+    check(
+      exported.join(',') === expected.join(','),
+      `dist/${file} exports ${exported.join(', ')}\n  expected ${expected.join(', ')}`,
+    );
+  }
+}
 
-check(exported !== undefined, 'dist/index.js exports nothing');
-if (exported !== undefined) {
-  const expected = [...SURFACE].sort();
+// The bindings are subpaths of this package, not repackagings of a framework:
+// react and solid-js stay external, and the core they share stays one chunk.
+for (const [file, peer] of [
+  ['react/index.js', 'react'],
+  ['solid/index.js', 'solid-js'],
+]) {
+  const source = readFileSync(join(DIST, file), 'utf8');
   check(
-    exported.join(',') === expected.join(','),
-    `dist/index.js exports ${exported.join(', ')}\n  expected ${expected.join(', ')}`,
+    new RegExp(`from\\s*["']${peer}["']`).test(source),
+    `dist/${file} does not import ${peer} — it was bundled instead of externalised`,
   );
 }
 
@@ -93,4 +127,7 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`✓ ${bundles.length} bundle(s): no dev paths, ${SURFACE.length} exports`);
+console.log(
+  `✓ ${bundles.length} bundle(s): no dev paths, ` +
+    `${Object.keys(ENTRIES).length} entries with the expected surface`,
+);

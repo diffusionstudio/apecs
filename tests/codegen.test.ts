@@ -43,7 +43,7 @@ describe('capability probe (§6.5)', () => {
     vi.resetModules();
 
     // Imported by path: the point of the test is the module's load-time side effect.
-    const module = await import('../src/codegen');
+    const module = await import('../src/core/codegen');
     const probes = () => spy.mock.calls.filter((call) => call.length > 0);
 
     expect(module.CAN_CODEGEN).toBe(true);
