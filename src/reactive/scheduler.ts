@@ -1,26 +1,27 @@
 /**
- * Coalescing between a world's observers and a framework's re-render.
+ * Coalescing between a world's writes and a framework's re-render
+ * (SPEC-CLIENTS §C.3.3).
  *
- * `onChange` fires per write. Handing that straight to a framework means
- * thousands of re-render requests inside one frame of a system loop, so a
- * dirtied source is queued here and its listeners run once per flush.
+ * The canvas may run far above the display's refresh rate, or on a fixed
+ * timestep unrelated to it; the DOM must not follow. Dirty cells are queued and
+ * recomputed once per animation frame, so a 240Hz simulation still yields at
+ * most one DOM update per paint.
  *
- * The default flush point is `world.step()` — it is already the frame boundary
- * and already advances the change clock (SPEC §8.3). Worlds that never step
- * fall back to a microtask so a one-off write from an event handler still
- * lands in the same turn.
+ * `'microtask'` tracks the simulation rate instead and exists for contexts with
+ * no rAF — Node, SSR, a worker — where `'frame'` degrades to it. `'sync'` is for
+ * tests; it defeats the coalescing by construction.
  */
 import type { World } from '../core/world';
 import { todo } from './todo';
 
-export type Flush = 'step' | 'microtask' | 'sync';
+export type Flush = 'frame' | 'microtask' | 'sync';
 
-/** Queues `notify` for a dirtied source; it runs once at the next flush. */
+/** Marks a cell dirty and schedules its world's flush. One per world per frame. */
 export function schedule(world: World, notify: () => void): void {
   todo(world, notify);
 }
 
-/** Overrides when queued notifications run for this world. Defaults to `'step'`. */
+/** Per world, not global. Defaults to `'frame'`. */
 export function setFlush(world: World, mode: Flush): void {
   todo(world, mode);
 }

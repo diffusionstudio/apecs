@@ -52,14 +52,31 @@ function check(condition, message) {
 /** Entry point → the exports it is allowed to have, in any order. */
 const ENTRIES = {
   'index.js': SURFACE,
-  'react/index.js': ['WorldProvider', 'useWorld', 'useField', 'useTrait', 'useHas', 'useQuery'],
+  'react/index.js': [
+    'WorldProvider',
+    'useWorld',
+    'useField',
+    'useTrait',
+    'useHas',
+    'useTag',
+    'useQuery',
+    'useQueryFirst',
+    'useTarget',
+    'useParent',
+    'useChildren',
+  ],
   'solid/index.js': [
     'WorldProvider',
     'useWorld',
     'createField',
     'createTrait',
     'createHas',
+    'createTag',
     'createQuery',
+    'createQueryFirst',
+    'createTarget',
+    'createParent',
+    'createChildren',
   ],
 };
 

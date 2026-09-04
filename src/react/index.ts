@@ -1,77 +1,106 @@
 /**
- * apecs/react — hooks over a world.
+ * apecs/react — hooks over a world (SPEC-CLIENTS §C.5).
  *
- * Every hook is a `useSyncExternalStore` over a `Source` (see
- * `src/reactive/source.ts`). The snapshot rule shapes the surface: React
- * compares with `Object.is` and must not see a fresh object per call, so
- * `useField` returns the scalar straight off an `Accessor` and allocates
- * nothing, while `useTrait` caches the copy `world.get` hands back and
- * re-materialises it only when the source's version moves (SPEC §4.5, §14).
+ * Every hook is a `useSyncExternalStore` over a `Cell` (§C.3.1). The cell has
+ * already gated on value, so its committed snapshot has stable identity between
+ * real changes and satisfies React's `Object.is` contract without allocating
+ * per render (§C.3.2).
  *
- * The world is passed explicitly rather than read from context inside each
- * hook: it keeps the hooks free of a provider requirement and tree-shakeable.
- * `WorldProvider` / `useWorld` are there for apps that want one anyway.
+ * The world is never an argument: it comes from the required `WorldProvider`
+ * (§C.4.1). Omitting the entity reads the world trait, mirroring core's own
+ * `world.get` overloads (§C.4.6, SPEC §5.4).
  */
 import { createContext, createElement, useContext, type ReactElement, type ReactNode } from 'react';
 
 import type { Entity } from '../core/entity';
-import { todo } from '../reactive/todo';
 import type { Field, Schema } from '../core/schema';
 import type { Term } from '../core/terms';
 import type { Value } from '../core/types';
 import type { TraitLike } from '../core/value';
 import type { World } from '../core/world';
+import type { Flush } from '../reactive/scheduler';
+import { todo } from '../reactive/todo';
 
 const WorldContext = createContext<World | null>(null);
 
-/** Puts a world on the context for `useWorld`. Optional — the hooks take a world directly. */
-export function WorldProvider(props: { world: World; children: ReactNode }): ReactElement {
+/** Required. Every hook reads the world from here (§C.4.1). */
+export function WorldProvider(props: {
+  world: World;
+  /** Defaults to 'frame'. TODO(§C.3.3): wire to the scheduler. */
+  flush?: Flush;
+  children: ReactNode;
+}): ReactElement {
   return createElement(WorldContext.Provider, { value: props.world }, props.children);
 }
 
-/** The nearest `WorldProvider`'s world. Throws when there is none. */
+/**
+ * The provider's world. Throws when there is none — unconditionally, since
+ * assertion bodies are stripped from the published build and a missing provider
+ * must fail legibly there too (§C.5.1).
+ */
 export function useWorld(): World {
   const world = useContext(WorldContext);
   if (world === null) {
-    throw new Error('apecs: useWorld() called outside a WorldProvider');
+    throw new Error('apecs: no WorldProvider — every hook needs one above it');
   }
   return world;
 }
 
-/**
- * One field of one entity. The fast path: the read goes through a memoised
- * accessor, so the snapshot is a number or string and costs no allocation.
- */
-export function useField<V>(world: World, entity: Entity, field: Field<V>): V {
-  return todo(world, entity, field);
+/** One field of one entity — a primitive snapshot gated by `Object.is`. */
+export function useField<V>(entity: Entity, field: Field<V>): V | undefined;
+export function useField<V>(field: Field<V>): V | undefined;
+export function useField<V>(a: Entity | Field<V>, b?: Field<V>): V | undefined {
+  return todo(a, b);
 }
 
-/**
- * A whole trait as a plain object, or `undefined` while the entity does not
- * hold it. The copy is cached between changes — `world.get` returns a fresh
- * object per call, which `Object.is` would read as a change every render
- * (SPEC §4.4).
- */
+/** A whole trait, as the gated copy from §C.3.2, or `undefined`. */
 export function useTrait<S extends Schema>(
-  world: World,
   entity: Entity,
   trait: TraitLike<S>,
+): Value<S> | undefined;
+export function useTrait<S extends Schema>(trait: TraitLike<S>): Value<S> | undefined;
+export function useTrait<S extends Schema>(
+  a: Entity | TraitLike<S>,
+  b?: TraitLike<S>,
 ): Value<S> | undefined {
-  return todo(world, entity, trait);
+  return todo(a, b);
 }
 
-/** Whether the entity holds the trait, re-rendering when that flips. */
-export function useHas(world: World, entity: Entity, trait: TraitLike): boolean {
-  return todo(world, entity, trait);
+/** Whether the trait is held. */
+export function useHas(entity: Entity, trait: TraitLike): boolean;
+export function useHas(trait: TraitLike): boolean;
+export function useHas(a: Entity | TraitLike, b?: TraitLike): boolean {
+  return todo(a, b);
 }
 
-/**
- * The entities matching `terms`, re-rendering when one enters or leaves.
- * The array identity is stable until the match set actually changes.
- */
-export function useQuery<const T extends readonly Term[]>(
-  world: World,
-  ...terms: T
-): readonly Entity[] {
-  return todo(world, terms);
+/** `useHas` for traits that carry no data; dev builds assert the tag kind. */
+export function useTag(entity: Entity, tag: TraitLike): boolean;
+export function useTag(tag: TraitLike): boolean;
+export function useTag(a: Entity | TraitLike, b?: TraitLike): boolean {
+  return todo(a, b);
+}
+
+/** The match set, recomputed on enter/exit. Order is not stable (§C.4.4). */
+export function useQuery(...terms: Term[]): readonly Entity[] {
+  return todo(terms);
+}
+
+/** `query.first` — commits an entity, so churn behind it costs no render. */
+export function useQueryFirst(...terms: Term[]): Entity | undefined {
+  return todo(terms);
+}
+
+/** The target of an exclusive relation; `NULL_ENTITY` maps to `undefined`. */
+export function useTarget(entity: Entity, relation: TraitLike): Entity | undefined {
+  return todo(entity, relation);
+}
+
+/** `useTarget` under the name the hierarchy case reads better in. */
+export function useParent(entity: Entity, relation: TraitLike): Entity | undefined {
+  return todo(entity, relation);
+}
+
+/** Its complement: `world.query(relation(entity))`. */
+export function useChildren(entity: Entity, relation: TraitLike): readonly Entity[] {
+  return todo(entity, relation);
 }
