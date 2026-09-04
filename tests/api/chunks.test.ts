@@ -255,7 +255,7 @@ describe('writing through a chunk (§6.6)', () => {
     expect(drain()).toEqual([marked]);
   });
 
-  test('world.changed does the same job from outside a chunk', () => {
+  test('world.markChanged does the same job from outside a chunk', () => {
     const world = makeWorld();
     const entity = world.spawn(Position);
     const changed = world.query(Position, Changed(Position));
@@ -267,7 +267,7 @@ describe('writing through a chunk (§6.6)', () => {
 
     drain();
     world.step();
-    world.changed(entity, Position);
+    world.markChanged(entity, Position);
 
     expect(drain()).toEqual([entity]);
   });

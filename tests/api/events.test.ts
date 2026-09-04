@@ -109,13 +109,13 @@ describe('observers (§8.1)', () => {
     expect(drain(changed)).toEqual([entity]);
   });
 
-  test('onChange fires on world.changed', () => {
+  test('onChange fires on world.markChanged', () => {
     const world = makeWorld();
     const seen: Entity[] = [];
     world.onChange(Position, (e) => seen.push(e));
     const entity = world.spawn(Position);
 
-    world.changed(entity, Position);
+    world.markChanged(entity, Position);
 
     expect(seen).toEqual([entity]);
   });
@@ -379,7 +379,7 @@ describe('query enter and exit (§8.2)', () => {
 });
 
 describe('change ticks (§8.3)', () => {
-  test('Changed sees a set, a cursor write, and world.changed alike', () => {
+  test('Changed sees a set, a cursor write, and world.markChanged alike', () => {
     const world = makeWorld();
     const bySet = world.spawn(Position, IsActive);
     const query = world.query(Position, Changed(Position));
@@ -398,7 +398,7 @@ describe('change ticks (§8.3)', () => {
     expect(drain(query)).toEqual([bySet]);
 
     world.step();
-    world.changed(bySet, Position);
+    world.markChanged(bySet, Position);
 
     expect(drain(query)).toEqual([bySet]);
   });
@@ -439,7 +439,7 @@ describe('change ticks (§8.3)', () => {
     expect(drain(query)).toHaveLength(3);
   });
 
-  test('world.changed on a world trait works through the trait-first overload', () => {
+  test('world.markChanged on a world trait works through the trait-first overload', () => {
     const Time = new Trait({ delta: 0 });
     const world = makeWorld();
     world.add(Time);
@@ -447,7 +447,7 @@ describe('change ticks (§8.3)', () => {
     drain(query);
 
     world.step();
-    world.changed(Time);
+    world.markChanged(Time);
 
     expect(drain(query)).toEqual([world.entity]);
   });

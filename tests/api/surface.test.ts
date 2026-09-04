@@ -58,7 +58,7 @@ const WORLD_METHODS = [
   'get',
   'set',
   'accessor',
-  'changed',
+  'markChanged',
   'target',
   'targets',
   'query',

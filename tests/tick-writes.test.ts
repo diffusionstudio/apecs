@@ -67,12 +67,12 @@ describe('writes that bump ticks (§8.3)', () => {
     world.destroy();
   });
 
-  test('world.changed stamps without touching the data', () => {
+  test('world.markChanged stamps without touching the data', () => {
     const world = new World();
     const e = world.spawn(Level({ value: 42 }));
     world.step();
 
-    world.changed(e, Level);
+    world.markChanged(e, Level);
 
     const column = columnOf(world, e, Level.value);
     expect(column.ticks![0][rowOf(world, e)]).toBe(world.tick);

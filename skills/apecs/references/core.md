@@ -1,8 +1,6 @@
 # apecs core reference
 
-Section markers point at [SPEC.md](../../../SPEC.md).
-
-## Traits (§3)
+## Traits
 
 ```ts
 new Trait(); // tag — no column
@@ -22,17 +20,17 @@ IsActive; // tags are passed bare
 
 ### Field types
 
-| Declaration        | Column                                       | Notes                                                            |
-| ------------------ | -------------------------------------------- | ---------------------------------------------------------------- |
-| `0`                | `Float64Array`                               | default for numbers                                              |
-| `f32/f64(0)`       | `Float32Array` / `Float64Array`              |                                                                  |
-| `i8/i16/i32(0)`    | `Int8Array` / `Int16Array` / `Int32Array`    |                                                                  |
-| `u8/u16/u32(0)`    | `Uint8Array` / `Uint16Array` / `Uint32Array` |                                                                  |
-| `false` / `bool()` | `Uint8Array`                                 | exposed as `boolean`                                             |
-| `''` / `str()`     | `Array<string>`                              | boxed                                                            |
-| `eid(0)`           | `Float64Array`                               | entity handle; patched to `NULL_ENTITY` on target despawn (§8.5) |
-| plain object       | flattened                                    | `{ pos: { x: 0 } }` → column `pos.x`                             |
-| anything else      | `Array<T>`                                   | boxed; dev warns and suggests an AoS trait                       |
+| Declaration        | Column                                       | Notes                                                     |
+| ------------------ | -------------------------------------------- | --------------------------------------------------------- |
+| `0`                | `Float64Array`                               | default for numbers                                       |
+| `f32/f64(0)`       | `Float32Array` / `Float64Array`              |                                                           |
+| `i8/i16/i32(0)`    | `Int8Array` / `Int16Array` / `Int32Array`    |                                                           |
+| `u8/u16/u32(0)`    | `Uint8Array` / `Uint16Array` / `Uint32Array` |                                                           |
+| `false` / `bool()` | `Uint8Array`                                 | exposed as `boolean`                                      |
+| `''` / `str()`     | `Array<string>`                              | boxed                                                     |
+| `eid(0)`           | `Float64Array`                               | entity handle; patched to `NULL_ENTITY` on target despawn |
+| plain object       | flattened                                    | `{ pos: { x: 0 } }` → column `pos.x`                      |
+| anything else      | `Array<T>`                                   | boxed; dev warns and suggests an AoS trait                |
 
 Field order is column order and is stable — part of the serialization contract.
 
@@ -44,7 +42,7 @@ single value is wanted: `world.get`, `world.set`, `world.accessor`, `sortBy`,
 exposes **only** its schema keys as string properties — internals are
 symbol-keyed — so no schema name can collide with a method.
 
-## Entities (§4)
+## Entities
 
 ```
 bit  51 ......... 44 43 .......... 32 31 ................ 0
@@ -69,7 +67,7 @@ world.has(e, Position)
 Prefer the `*Many` forms for anything above a handful of entities — they are a
 first-class part of the API, not an optimisation afterthought.
 
-## World (§5)
+## World
 
 ```ts
 const world = new World({ pageSize: 4096, maxEntities: 1 << 20 });
@@ -97,7 +95,7 @@ world.has(Time);
 world.remove(Time);
 ```
 
-## Reads and writes (§4.4, §4.5)
+## Reads and writes
 
 ```ts
 world.get(e, Position); // { x, y } — a COPY, allocates
@@ -105,7 +103,7 @@ world.get(e, Position, out); // writes into `out`, returns it — no allocation
 world.get(e, Position.x); // number — no allocation
 world.set(e, Position, { x: 5 }); // partial write, stamps the tick, fires onChange
 world.set(e, Position.x, 5);
-world.changed(e, Position); // stamp the tick manually
+world.markChanged(e, Position); // stamp the tick manually
 ```
 
 ### Accessors — per-entity access in the hot path
@@ -125,7 +123,7 @@ or an AoS trait; struct traits, tags, and non-exclusive relations are rejected a
 creation in dev. The accessor follows the entity through archetype moves, id
 recycling, `compact()` and `clear()`.
 
-## Queries (§6)
+## Queries
 
 ### Terms
 
@@ -218,7 +216,7 @@ interface Chunk<T> {
 - Views are valid **only for the current iteration step** — never retain them.
 - No change tracking, no liveness checks. That is the trade.
 
-### Sorted queries (§6.7)
+### Sorted queries
 
 `sortBy` is itself a cache lookup keyed on `(query signature, field, direction)`,
 so calling it per frame is O(1). Sorting materialises the result, so a sorted
@@ -240,7 +238,7 @@ Needed when the key is derived from something apecs can't see. The comparator
 overload has no key column, so it is always treated as `resort`-dirty unless you
 memoise it yourself.
 
-## Relations (§7)
+## Relations
 
 ```ts
 new Relation(); // tag relation
@@ -271,7 +269,7 @@ deep hierarchies and cycles terminate cleanly.
 one linear pass instead of a recursive walk. Exclusive, acyclic relations only;
 forces materialisation, so no `chunks`.
 
-## Events and ticks (§8)
+## Events and ticks
 
 ```ts
 const off = world.onAdd(Position, (entity) => {});
@@ -297,8 +295,9 @@ makes sorted memoisation O(matching archetypes)).
 
 1. `world.get(e, Trait)` returns a **copy** and allocates. Use `out` or a field.
 2. Cursors from `each` are borrowed — never retain past the callback.
-3. Chunk writes bypass ticks → `chunk.markChanged(Trait)` or `Changed()`, sorted
-   views, and `onChange`-driven UI all silently miss the write.
+3. Chunk writes bypass ticks. Call `chunk.markChanged(Trait)` — or
+   `world.markChanged(e, Trait)` for one entity from outside a chunk — or
+   `Changed()`, sorted views, and `onChange`-driven UI all silently miss the write.
 4. Mutating any entity other than the current one during iteration, or spawning,
    requires `world.defer`.
 5. Tags and `Not`/`With`/`Changed`/`Added`/`Removed` contribute **no** `each`
@@ -312,7 +311,7 @@ makes sorted memoisation O(matching archetypes)).
 11. Boxed columns (`string`, arrays, AoS) are not `SharedArrayBuffer`-shareable —
     relevant to how you shape traits today, for v2 worker parallelism.
 
-## Limits (§12.3)
+## Limits
 
 | Limit                               | Value                      |
 | ----------------------------------- | -------------------------- |

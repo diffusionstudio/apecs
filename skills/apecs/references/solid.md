@@ -1,9 +1,6 @@
 # `apecs/solid`
 
-Section markers of the form §C.n point at
-[SPEC-CLIENTS.md](../../../SPEC-CLIENTS.md); bare §n at [SPEC.md](../../../SPEC.md).
-The React binding is the same model under different names —
-[react.md](react.md).
+The React binding is the same model under different names — [react.md](react.md).
 
 The binding projects a mutable, frame-rate-decoupled world into Solid **without
 dragging the DOM along at simulation rate**. It renders nothing and it never
@@ -13,7 +10,7 @@ calls `world.step()`.
 
 Solid is push-based, so there is no snapshot contract to satisfy and nothing to
 cache for identity's sake. Each factory is a signal seeded from a shared _cell_
-(§C.3.1) and written by its subscription:
+and written by its subscription:
 
 ```ts
 const unsubscribe = cell.subscribe(() => set(() => cell.value()));
@@ -66,7 +63,7 @@ torn, stale by at most one frame. Code that needs the live value reads
 dirty until it is visible again. Correct for rendering; use an `on*` subscription
 for anything that must observe every change regardless of visibility.
 
-## Sharing (§C.3.4)
+## Sharing
 
 ```
 world registry
@@ -78,7 +75,7 @@ world registry
 Ten components calling `createField(player, Position.x)` share one cell: a write
 recomputes once, gates once, notifies ten — not ten recomputes of the same value.
 Query cells intern on the `QueryResult` identity, which core already hashes from
-the term list (§6.2), so two components with equal terms share a cell without the
+the term list, so two components with equal terms share a cell without the
 binding hashing anything. Everything is reference-counted and released with the
 owner, top to bottom.
 
@@ -116,7 +113,7 @@ with Solid's exports.
 | `useOnExit`           | `onExit`                 |
 
 Getters are typed `() => V` rather than Solid's `Accessor<V>` — structurally
-identical, and it avoids colliding with apecs's own `Accessor` (§4.5).
+identical, and it avoids colliding with apecs's own `Accessor`.
 
 ## Provider
 
@@ -167,9 +164,9 @@ const leader = createSortedQueryFirst([Racer], Progress.distance, 'desc');
 <For each={enemies()}>{(e) => <Row entity={e} />}</For>;
 ```
 
-- **`createField` is the fast path.** It reads through a memoised `Accessor`
-  (§4.5), so the value is a primitive and the gate is a single `Object.is`.
-- **Omitting the entity reads a world trait** (§5.4). This mirrors core's own
+- **`createField` is the fast path.** It reads through a memoised `Accessor`, so
+  the value is a primitive and the gate is a single `Object.is`.
+- **Omitting the entity reads a world trait**. This mirrors core's own
   `world.get` overloads rather than adding a `createResource`-shaped name — which
   would also have collided with Solid's `createResource` — and unlike one it
   reaches a world trait's individual _fields_.
@@ -181,7 +178,7 @@ const leader = createSortedQueryFirst([Racer], Progress.distance, 'desc');
   extremum — the leader, the nearest, the topmost layer.
 - **`createSortedQuery` takes terms as an array**, because the sort key follows
   them. `direction` defaults to `'asc'`. It is the only factory whose order means
-  anything. The comparator overload of `sortBy` has none (§C.3.6) — no key column
+  anything. The comparator overload of `sortBy` has none — no key column
   to observe means no wake source to build one on.
 
 ## Writes and lifecycle
@@ -203,7 +200,7 @@ during setup rather than in an effect, so unlike React's `useEntity` there is
 nothing to wait for and no StrictMode double-spawn. It despawns on cleanup, unless
 something else already did.
 
-## Owner-bound subscriptions — the escape hatch (§C.7)
+## Owner-bound subscriptions — the escape hatch
 
 ```ts
 onAdd(trait, fn)
@@ -213,7 +210,7 @@ onEnter(terms: Term[], fn)
 onExit(terms: Term[], fn)
 ```
 
-A one-to-one mirror of the core observers (§8.1, §8.2), released with the owner.
+A one-to-one mirror of the core observers, released with the owner.
 **Not gated, not coalesced** — they fire synchronously inside the write, exactly
 as core does. They exist for the case where a value-gated, frame-decoupled update
 is the wrong tool: writing into a ref, driving a canvas, feeding an animation.
@@ -229,7 +226,7 @@ a module needs both, alias one.
    ungated escape hatch.
 2. **Everything returns a getter.** `createField(...)` is a function — call it.
    Destructuring or reading it outside a tracking scope freezes the value.
-3. **Creating a cell makes its trait tracked world-wide** (§C.3.5), so every
+3. **Creating a cell makes its trait tracked world-wide**, so every
    system write to it then stamps a change tick. Twenty `createField` calls on
    twenty entities of one trait cost one tracked trait; twenty _different_ traits
    cost twenty. This is the second reason the `on*` subscriptions exist.
@@ -238,21 +235,21 @@ a module needs both, alias one.
    get the _same object_; mutating it corrupts every other reader and is
    overwritten on the next change anyway. Dev freezes committed values.
 6. **Dead entities yield `undefined`**, never a throw.
-7. **Key `<For>` by entity.** Query order is not stable and carries no meaning
-   (§C.4.4). If order is part of what you show, use `createSortedQuery`.
+7. **Key `<For>` by entity.** Query order is not stable and carries no meaning.
+   If order is part of what you show, use `createSortedQuery`.
 8. **Terms need no memoisation.** A fresh term array is an O(1) cache lookup, not
    a re-subscription; same for the `sortBy` on top of it. Never `.dispose()` what
-   a factory handed you (§C.4.3).
-9. **Sort keys written through `chunks` do not wake a sorted cell** (§C.11.1).
+   a factory handed you.
+9. **Sort keys written through `chunks` do not wake a sorted cell**.
    `chunk.markChanged` bumps `lastWriteTick` — enough for core's view to know it
    owes a resort — but fires no observer, so the list stays in its old order.
    Write sort keys behind a mounted list through `world.set` or an accessor; a
    chunk system that must write them is the `on*` case.
 10. **Struct traits get a gated copy, not per-field reactivity.** `createStore`
-    plus `reconcile` would be strictly better and is deferred (§C.11.3). Until
+    plus `reconcile` would be strictly better and is deferred. Until
     then, reach for `createField` when you want one number to move on its own.
 
-## Testing (§C.9)
+## Testing
 
 A jsdom vitest project, factory-first and JSX-free — `createRoot` / `dispose`,
 which keeps the suite off `vite-plugin-solid` and the Solid JSX transform.

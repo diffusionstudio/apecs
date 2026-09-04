@@ -297,10 +297,10 @@ describe('value invalidation through lastWriteTick (§6.7, §8.3)', () => {
     world.destroy();
   });
 
-  test('world.changed schedules a resort without touching the data', () => {
+  test('world.markChanged schedules a resort without touching the data', () => {
     const { world, spawned, sorted } = settled();
 
-    world.changed(spawned[0], SortIndex);
+    world.markChanged(spawned[0], SortIndex);
 
     expect(sorted.isDirty).toBe('resort');
 

@@ -1,9 +1,6 @@
 # `apecs/react`
 
-Section markers of the form §C.n point at
-[SPEC-CLIENTS.md](../../../SPEC-CLIENTS.md); bare §n at [SPEC.md](../../../SPEC.md).
-The Solid binding is the same model under different names —
-[solid.md](solid.md).
+The Solid binding is the same model under different names — [solid.md](solid.md).
 
 The binding projects a mutable, frame-rate-decoupled world into React **without
 dragging the DOM along at simulation rate**. It renders nothing and it never
@@ -13,7 +10,7 @@ calls `world.step()`.
 
 Every read hook is
 `useSyncExternalStore(cell.subscribe, cell.value, cell.value)` over a shared
-_cell_ (§C.3.1). Two mechanisms sit behind that.
+_cell_. Two mechanisms sit behind that.
 
 **1. Value gating.** A cell notifies when a _value_ changes, never merely when a
 write happened. A simulation writing `Position.x = 4` sixty times between paints
@@ -57,7 +54,7 @@ that window sees the stale value. Code that needs the live value reads
 dirty until it is visible again. Correct for rendering; use an imperative hook for
 anything that must observe every change regardless of visibility.
 
-## Sharing (§C.3.4)
+## Sharing
 
 ```
 world registry
@@ -69,7 +66,7 @@ world registry
 Ten components calling `useField(player, Position.x)` share one cell: a write
 recomputes once, gates once, notifies ten — not ten recomputes of the same value.
 Query cells intern on the `QueryResult` identity, which core already hashes from
-the term list (§6.2), so two hooks with equal terms share a cell without the
+the term list, so two hooks with equal terms share a cell without the
 binding hashing anything. Everything is reference-counted and released on unmount,
 top to bottom, so an unmounted subtree stops costing anything at every level.
 
@@ -119,9 +116,9 @@ const enemies = useQuery(Position, IsEnemy); // key the list by entity
 const leader = useSortedQueryFirst([Racer], Progress.distance, 'desc');
 ```
 
-- **`useField` is the fast path.** It reads through a memoised `Accessor` (§4.5),
+- **`useField` is the fast path.** It reads through a memoised `Accessor`,
   so the snapshot is a primitive and the gate is a single `Object.is`.
-- **Omitting the entity reads a world trait** (§5.4). This mirrors core's own
+- **Omitting the entity reads a world trait**. This mirrors core's own
   `world.get` overloads rather than adding a `useResource` name, and unlike one it
   reaches a world trait's individual _fields_.
 - **`useTrait` returns the gated copy.** On a tag, or when you want one number,
@@ -135,7 +132,7 @@ const leader = useSortedQueryFirst([Racer], Progress.distance, 'desc');
   behind the winner is free.
 - **`useSortedQuery` takes terms as an array**, because the sort key follows them.
   `direction` defaults to `'asc'`. It is the only hook whose order means anything.
-  The comparator overload of `sortBy` has no hook (§C.3.6) — it has no key column
+  The comparator overload of `sortBy` has no hook — it has no key column
   to observe, so there is no wake source to build one on.
 - **`useParent` is `useTarget` under the name the hierarchy case reads better in**;
   `useChildren` is its complement.
@@ -157,7 +154,7 @@ const setX = useAccessor(Position.x);
 `useEntity` returns `undefined` until the mount effect has run, and reads its
 items once, at spawn.
 
-## Imperative hooks — the escape hatch (§C.7)
+## Imperative hooks — the escape hatch
 
 ```ts
 useOnAdd(trait, fn)
@@ -181,7 +178,7 @@ costs no re-subscription and never fires stale** — no `useCallback` needed.
 1. **The provider is required**, and no hook takes a world argument. One component
    therefore cannot read two worlds; nest a second provider around that subtree, or
    use `useWorld()` plus a direct `world.get` as the uncached, ungated escape hatch.
-2. **Mounting a hook makes its trait tracked world-wide** (§C.3.5), so every system
+2. **Mounting a hook makes its trait tracked world-wide**, so every system
    write to it then stamps a change tick. Twenty `useField` hooks on twenty
    entities of one trait cost one tracked trait; hooks on twenty _different_ traits
    cost twenty. This is the second reason the imperative hooks exist.
@@ -192,19 +189,19 @@ costs no re-subscription and never fires stale** — no `useCallback` needed.
 5. **Dead entities yield `undefined`**, never a throw during render — likewise a
    live entity that does not hold the trait.
 6. **Key lists by entity, not index.** Query order is not stable and carries no
-   meaning (§C.4.4). If order is part of what you show, use `useSortedQuery`.
+   meaning. If order is part of what you show, use `useSortedQuery`.
 7. **Terms need no memoisation.** A fresh term array per render is an O(1) cache
    lookup, not a re-subscription; same for the `sortBy` on top of it. Never
-   `.dispose()` what a hook handed you (§C.4.3).
-8. **Sort keys written through `chunks` do not wake a sorted cell** (§C.11.1).
+   `.dispose()` what a hook handed you.
+8. **Sort keys written through `chunks` do not wake a sorted cell**.
    `chunk.markChanged` bumps `lastWriteTick` — enough for core's view to know it
    owes a resort — but fires no observer, so the list stays in its old order. Write
    sort keys behind a mounted list through `world.set` or an accessor; a chunk
    system that must write them is the imperative-hook case.
 9. **`useEntity` under StrictMode** spawns, despawns and spawns again, burning one
-   entity id per mounted component. Correct, wasteful, and known (§C.11.4).
+   entity id per mounted component. Correct, wasteful, and known.
 
-## Testing (§C.9)
+## Testing
 
 A jsdom vitest project, hook-first and JSX-free — `renderHook` from
 `@testing-library/react`, so the suite needs no JSX transform.

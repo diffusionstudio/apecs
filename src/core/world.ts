@@ -472,7 +472,7 @@ export class World {
   }
 
   /** Stamps the change tick without touching the data (SPEC §8.3). */
-  public changed(target: Entity | TraitLike, spec?: TraitLike): void {
+  public markChanged(target: Entity | TraitLike, spec?: TraitLike): void {
     const world = typeof target !== 'number';
     const entity = world ? this.entity : (target as Entity);
     const trait = traitOf((world ? target : spec) as TraitLike);

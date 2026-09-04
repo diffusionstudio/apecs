@@ -659,7 +659,7 @@ world.query(Removed(Velocity)); // valid for one tick after removal
 
 Each `Changed`/`Added`/`Removed` query stores its own last-seen tick, so two systems observing the same trait do not steal each other's events.
 
-Ticks are written by `world.set` and by cursor setters. **Direct chunk writes bypass them** — call `chunk.markChanged(trait)` or `world.changed(e, trait)`. Both forms update the per-row ticks _and_ the column's `lastWriteTick`.
+Ticks are written by `world.set` and by cursor setters. **Direct chunk writes bypass them** — call `chunk.markChanged(trait)` or `world.markChanged(e, trait)`. Both forms update the per-row ticks _and_ the column's `lastWriteTick`.
 
 Tick columns are allocated only for **tracked** traits: a trait becomes tracked on the first `onChange` subscription, the first `Changed()`/`sortBy` usage, or `{ track: true }`. Untracked traits pay nothing per write.
 
@@ -936,7 +936,7 @@ world.has(e?, trait): boolean
 world.get(e?, traitOrField, out?)
 world.set(e?, traitOrField, value)
 world.accessor(field): Accessor       // .get(e)  .set(e, value)
-world.changed(e, trait)
+world.markChanged(e, trait)
 world.target(e, relation)        world.targets(e, relation)
 
 // queries

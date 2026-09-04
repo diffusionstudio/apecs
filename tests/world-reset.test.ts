@@ -241,7 +241,7 @@ describe('destroy (§5.5)', () => {
       () => world.has(e, Position),
       () => world.get(e, Position),
       () => world.set(e, Position, { x: 1 }),
-      () => world.changed(e, Position),
+      () => world.markChanged(e, Position),
       () => world.tick,
       () => world.step(),
       () => world.onAdd(Position, () => {}),

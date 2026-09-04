@@ -11,10 +11,6 @@ documented cost, and choosing the wrong one is the main way to lose the
 performance the library exists to provide. This skill is mostly about choosing
 correctly.
 
-Source of truth: [SPEC.md](../../SPEC.md) (core, §-numbered) and
-[SPEC-CLIENTS.md](../../SPEC-CLIENTS.md) (bindings, §C-numbered). The specs are
-current with the implementation — when in doubt, cite them, don't guess.
-
 ## Entry points
 
 | specifier        | what                                    |
@@ -36,7 +32,7 @@ const IsEnemy = new Trait(); // tag — no column
 const Time = new Trait({ delta: 0, current: 0 }); // used as a world trait
 
 const world = new World();
-world.add(Time); // no entity arg → the world entity (§5.4)
+world.add(Time); // no entity arg → the world entity
 
 const e = world.spawn(Position({ x: 20 }), Velocity, IsEnemy);
 const swarm = world.spawnMany(10_000, Position, Velocity); // ONE archetype transition
@@ -48,13 +44,13 @@ world.query(Position, Velocity).each((p, v) => {
 ```
 
 - **Traits are global, worlds are isolated.** Declare traits once at module
-  scope; a world only pays for the traits it actually uses (§5.3).
+  scope; a world only pays for the traits it actually uses.
 - **Entities are packed 52-bit numbers**, not objects. `world.add(T)` targets the
   world entity, `world.add(e, T)` targets `e` — the overload is discriminated on
-  "first argument is a number" (§4.1, §5.4).
+  "first argument is a number".
 - **Queries are cached and incrementally maintained.** Calling
   `world.query(Position, Velocity)` every frame is the intended usage and is an
-  O(1) hash lookup — matching cost per frame is zero (§6.2).
+  O(1) hash lookup — matching cost per frame is zero.
 
 ## Pick the right access tier
 
@@ -99,7 +95,7 @@ when deferral is awkward. Dev builds detect unsafe mutation; production does not
 
 ## Change detection
 
-Two mechanisms, for two different questions (§8):
+Two mechanisms, for two different questions:
 
 - **Push — `world.onAdd` / `onRemove` / `onChange` / `onEnter` / `onExit`.**
   Dispatched synchronously inside the write. `onRemove` fires _before_ the data is
@@ -132,7 +128,7 @@ relations store the target in a column plus a target index: one archetype no
 matter how many parents exist, and re-targeting costs no archetype transition.
 Non-exclusive relations intern one pair id per `(relation, target)` into the
 archetype mask — correct at low fan-out (`Likes`, `Owes`), pathological at high
-fan-out. Dev warns past a threshold (§7.4).
+fan-out. Dev warns past a threshold.
 
 ## UI bindings in one rule
 
@@ -158,7 +154,7 @@ call it. Full mapping in [references/solid.md](references/solid.md).
 Two things to internalise before writing any binding code:
 
 1. **Mounting a hook makes its trait tracked world-wide**, so every system write to
-   that trait then stamps a tick (§C.3.5). It is a real cost on the simulation, not
+   that trait then stamps a tick. It is a real cost on the simulation, not
    just on the component.
 2. **Anything that changes every frame does not belong in a re-render.** Use the
    imperative hooks (`useOnChange` / `onChange`, …) and write into a ref or canvas.

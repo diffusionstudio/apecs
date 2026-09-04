@@ -103,7 +103,7 @@ describe('observer dispatch (§8.1)', () => {
     world.destroy();
   });
 
-  test('onChange fires for trait writes, field writes and world.changed', () => {
+  test('onChange fires for trait writes, field writes and world.markChanged', () => {
     const world = new World();
     const e = world.spawn(Position);
     const seen: Entity[] = [];
@@ -111,7 +111,7 @@ describe('observer dispatch (§8.1)', () => {
 
     world.set(e, Position, { x: 1 });
     world.set(e, Position.y, 2);
-    world.changed(e, Position);
+    world.markChanged(e, Position);
 
     expect(seen).toEqual([e, e, e]);
 
