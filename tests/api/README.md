@@ -32,6 +32,7 @@ package can reach — the values exported from `src/index`, which is what
 | `each.test.ts`       | §6.5 — tier 2 cursors                                        |
 | `chunks.test.ts`     | §6.6 — tier 3 pages                                          |
 | `sorted.test.ts`     | §6.7 — sorted views and their invalidation contract          |
+| `ordered.test.ts`    | §6.8 — ordered storage: key order in the rows, every tier    |
 | `relations.test.ts`  | §7 — declaration, usage, querying, lifecycle, `Cascade`      |
 | `events.test.ts`     | §8 — observers, enter/exit, change ticks, `eid` patching     |
 | `structural.test.ts` | §9 — what is safe during iteration, `defer` / `flush`        |

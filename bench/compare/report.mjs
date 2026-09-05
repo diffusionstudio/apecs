@@ -225,6 +225,29 @@ for (const lib of LIBS) {
 w();
 w('At 1 000 000 entities that is 38 MB for apecs against 237 MB for bitECS and 294 MB for koota.');
 w();
+{
+  // The fit spans an empty world too, so a fixed cost that moves between builds
+  // leaks into the slope. The marginal cost between the two largest sizes cannot:
+  // no fixed cost survives the subtraction.
+  const marginal = (lib) => {
+    const points = r.memory[lib]?.points;
+    if (!points || points.length < 2) {
+      return undefined;
+    }
+    const [a, b] = points.slice(-2);
+    return (b.bytes - a.bytes) / (b.n - a.n);
+  };
+  w(
+    `As a cross-check the fit is not being steered by its empty-world point: the *marginal* bytes between`,
+  );
+  w(
+    `the two largest world sizes are ${LIBS.filter((l) => marginal(l) !== undefined)
+      .map((l) => `${marginal(l).toFixed(1)} for ${TITLE[l]}`)
+      .join(', ')}.`,
+  );
+}
+
+w();
 w('## The finding that matters most: the ergonomic tier falls off a cliff at five traits');
 w();
 w("V8's inline caches hold four shapes before going megamorphic. Every library here that offers a");
@@ -290,14 +313,22 @@ w(
   'Sorting is where apecs claims a feature the field mostly lacks. bitECS and becsy ship none; koota has',
 );
 w(
-  '`QueryResult.sort()`, which re-sorts on demand. 100 000 entities iterated in sorted order every frame,',
+  '`QueryResult.sort()`, which re-sorts on demand. apecs ships two answers: `sortBy` keeps the order in a',
 );
-w('microseconds:');
+w(
+  'side array and hands out `each`, while `orderBy` (SPEC §6.8) permutes the archetype rows themselves, so',
+);
+w(
+  'the order *is* the storage layout and `chunks` keeps working. 100 000 entities iterated in sorted order',
+);
+w('every frame, microseconds:');
 w();
 w('| | keys never change | 1% of keys change per frame |');
 w('| --- | --- | --- |');
 for (const [k, label] of [
-  ['apecs', 'apecs `sortBy`'],
+  ['apecsOrderedChunks', 'apecs `orderBy` + `chunks`'],
+  ['apecsOrderedEach', 'apecs `orderBy` + `each`'],
+  ['apecs', 'apecs `sortBy` + `each`'],
   ['koota', 'koota `sort()`'],
   ['handwritten', 'hand-written `Array.sort` + gather'],
 ]) {
@@ -307,32 +338,84 @@ for (const [k, label] of [
 }
 w();
 w(
-  'apecs is **6–8× faster than koota** here, which is the headline. But it is also **2.3× slower than',
+  'Every apecs frame here includes the `world.step()` a real frame pays. The dirty check is tick-based',
 );
-w('simply sorting an id array by hand**, and that deserves attention rather than a victory lap:');
+w(
+  '(SPEC §8.3): a view settles only once the tick has moved past the writes that built it, and the previous',
+);
+w(
+  'version of this benchmark left it out — which measured `sortBy` re-sorting every frame in the regime',
+);
+w('that exists to show it does not.');
 w();
-const si = f.sortedIsolation;
-w(
-  `- Iterating the same query linearly costs ${si.plainEach} ns/entity. Iterating it sorted costs ${si.sortedEach} ns/entity — **${(si.sortedEach / si.plainEach).toFixed(0)}×**.`,
-);
-w(
-  `- A hand-written gather over an identical precomputed order costs ${si.handWrittenGatherOverFixedOrder} ns/entity, so the gap is not memory locality; it is ~37 ns/entity of overhead inside the sorted iteration driver.`,
-);
-w(
-  `- \`sorted.entities()\` on a view whose keys were **never touched** costs ${si.sortedEntitiesOnly} ns/entity, and that cost is flat at every world size (${Object.values(
-    f.sortedStaticIsLinear.nsPerEntity,
-  )
-    .map((v) => v.toFixed(2))
-    .join(' / ')} ns/entity at 1 k / 10 k / 100 k). It is O(n).`,
-);
-w();
-w(
-  'SPEC §12.1 budgets `sorted-static` at **zero work** — "one `lastWriteTick` compare per matching',
-);
-w(
-  'archetype." The measured cost is linear in entity count at every size, so that budget is not being met.',
-);
-w('This is the clearest actionable gap the comparison turned up.');
+{
+  const q = f.sortedQueries;
+  const oc = q.apecsOrderedChunks;
+  // A three-digit multiple with a decimal point reads as false precision.
+  const x = (a, b) => (a / b >= 100 ? (a / b).toFixed(0) : (a / b).toFixed(1));
+  w(
+    `**\`orderBy\` is the headline.** On a frame where no key moved it costs ${oc.static.toFixed(0)} µs — ${x(q.koota.static, oc.static)}× faster than`,
+  );
+  w(
+    `koota, ${x(q.handwritten.static, oc.static)}× faster than sorting an id array by hand, and ${x(q.apecs.static, oc.static)}× faster than apecs's own \`sortBy\`. There is`,
+  );
+  w(
+    `no gather and no side array to walk: the rows are already in key order, so the frame is one dirty check`,
+  );
+  w(
+    `and a plain chunk walk — ${((oc.static * 1000) / 100_000).toFixed(2)} ns/entity, against the ${f.apecsCallCost.chunks.perEntityNs} ns/entity an *unsorted* \`chunks\` walk costs.`,
+  );
+  w();
+  w(
+    `**The trade is on the frames that do sort.** With 1% of keys drifting, \`orderBy\` pays a real resort —`,
+  );
+  w(
+    `key extraction, an adaptive sort, then the permutation applied to every column — and lands at`,
+  );
+  w(
+    `${oc.drift.toFixed(0)} µs, ${x(oc.drift, q.handwritten.drift)}× the hand-written sort, which moves one id array where apecs moves five columns of`,
+  );
+  w(
+    `real data. Sorted *iteration* is free; sorting is not. It is still ${x(q.koota.drift, oc.drift)}× faster than koota, which`,
+  );
+  w('re-sorts unconditionally whether or not anything moved.');
+  w();
+  const si = f.sortedIsolation;
+  w(
+    `**\`sortBy\` is the one to watch.** ${q.apecs.static.toFixed(0)} µs on a *clean* frame, against ${oc.static.toFixed(0)} µs for \`orderBy\`, because the`,
+  );
+  w(`materialised walk is the cost even when the order is cached:`);
+  w();
+  w(
+    `- Iterating the same query linearly costs ${si.plainEach} ns/entity. Iterating it sorted costs ${si.sortedEach} ns/entity — **${(si.sortedEach / si.plainEach).toFixed(0)}×**.`,
+  );
+  w(
+    `- A hand-written gather over an identical precomputed order costs ${si.handWrittenGatherOverFixedOrder} ns/entity, so the gap is not memory locality; it is ~37 ns/entity of overhead inside the sorted iteration driver.`,
+  );
+  w(
+    `- \`sorted.entities()\` on a view whose keys were **never touched** costs ${si.sortedEntitiesOnly} ns/entity, and that cost is flat at every world size (${Object.values(
+      f.sortedStaticIsLinear.nsPerEntity,
+    )
+      .map((v) => v.toFixed(2))
+      .join(' / ')} ns/entity at 1 k / 10 k / 100 k). It is O(n).`,
+  );
+  w();
+  w(
+    'SPEC §12.1 budgets `sorted-static` at **zero work** — "one `lastWriteTick` compare per matching',
+  );
+  w(
+    `archetype." \`sortBy\` does not meet it: its clean-frame cost is linear in entity count at every size.`,
+  );
+  w(
+    `\`orderBy\` does, and that is what it was built for — it is the same ${((oc.static * 1000) / 100_000).toFixed(2)} ns/entity as an unsorted walk,`,
+  );
+  w(
+    'so the ordering itself is genuinely free. The remaining choice is a semantic one: `sortBy` when the',
+  );
+  w(
+    'order must be total across archetypes, `orderBy` when it need only hold within each (SPEC §6.8).',
+  );
+}
 w();
 w('## What the accessor work changed');
 w();

@@ -47,5 +47,6 @@ export type { Accessor } from './core/accessor';
 
 export type { QueryResult } from './core/query';
 export type { Comparator, DirtyLevel, SortedQueryResult } from './core/sorted';
+export type { OrderedQueryResult } from './core/ordered';
 export type { IndexedQueryResult } from './core/materialized';
 export type { Chunk } from './core/chunk';

@@ -1,5 +1,5 @@
 {
-  "note": "Supplementary measurements beyond the head-to-head suite. Each entry names the script that reproduces it. apecs figures re-measured after sparse storage was removed; competitor figures are unchanged, their versions having not moved.",
+  "note": "Supplementary measurements beyond the head-to-head suite. Each entry names the script that reproduces it. Sorted-query figures re-measured after orderBy landed; competitor figures are unchanged, their versions having not moved.",
   "traitCountSweep": {
     "script": "node cliff-cross.mjs <library> <k>   (one k per process, deliberately)",
     "what": "ns per entity-visit, ergonomic tier: N=1000 entities carrying k distinct traits, one pass per trait.",
@@ -27,20 +27,29 @@
     }
   },
   "sortedQueries": {
-    "script": "node capability.mjs <library> <static|drift>",
-    "what": "100 000 entities iterated in sorted order every frame, microseconds.",
+    "script": "node capability.mjs <apecs|apecs-ordered|apecs-ordered-chunks|koota|handwritten> <static|drift>",
+    "what": "100 000 entities iterated in sorted order every frame, microseconds. Every apecs frame includes the world.step() a real frame pays: the dirty check is tick-based (SPEC 8.3), so a view only settles once the tick has moved past the writes that built it.",
+    "apecsOrderedChunks": {
+      "static": 88.8,
+      "drift": 1636.4
+    },
+    "apecsOrderedEach": {
+      "static": 196.7,
+      "drift": 1784.0
+    },
     "apecs": {
-      "static": 3214.7,
-      "drift": 2920.0
+      "static": 2626.0,
+      "drift": 2915.3
     },
     "koota": {
-      "static": 26321.0,
-      "drift": 19015.7
+      "static": 25327.7,
+      "drift": 17490.9
     },
     "handwritten": {
-      "static": 1453.0,
-      "drift": 1404.1
-    }
+      "static": 1414.5,
+      "drift": 1402.4
+    },
+    "note": "orderBy (SPEC 6.8) permutes the archetype rows themselves, so a clean frame is the plain chunk walk and nothing else: 0.89 ns/entity against the 26.3 ns/entity the materialised sortBy walk costs. The previous figures in this file were measured without world.step(), which left the sortBy view resorting every frame in the static regime."
   },
   "sortedIsolation": {
     "script": "node sorted-isolate.mjs",

@@ -135,6 +135,19 @@ export class Column {
     }
   }
 
+  /**
+   * Applies a permutation given as its cycles, `[len, r0 … r(len-1)]` each:
+   * the value at `r(i+1)` moves to `r(i)`, and the one at `r0` to the last
+   * member. Rows outside every cycle are not touched, and the ticks move
+   * with the data (SPEC §6.8, §8.3).
+   */
+  public permute(cycles: Uint32Array, n: number): void {
+    permutePages(this.pages, this.shift, this.mask, cycles, n);
+    if (this.ticks !== null) {
+      permutePages(this.ticks, this.shift, this.mask, cycles, n);
+    }
+  }
+
   /** Releases the tail pages that `rows` live rows no longer reach. */
   public compact(rows: number): number {
     const needed = Math.ceil(rows / this.pageSize);
@@ -147,5 +160,27 @@ export class Column {
       this.ticks.length = needed;
     }
     return released;
+  }
+}
+
+function permutePages(
+  pages: ColumnPage[],
+  shift: number,
+  mask: number,
+  cycles: Uint32Array,
+  n: number,
+): void {
+  for (let at = 0; at < n;) {
+    const end = at + 1 + cycles[at];
+    let row = cycles[at + 1];
+    const held = (pages[row >>> shift] as unknown[])[row & mask];
+    for (at += 2; at < end; at++) {
+      const next = cycles[at];
+      (pages[row >>> shift] as unknown[])[row & mask] = (pages[next >>> shift] as unknown[])[
+        next & mask
+      ];
+      row = next;
+    }
+    (pages[row >>> shift] as unknown[])[row & mask] = held;
   }
 }

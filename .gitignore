@@ -6,3 +6,4 @@ coverage
 
 # Benchmark output (published by CI, never committed)
 bench/results.json
+bench/report.html

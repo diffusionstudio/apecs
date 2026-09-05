@@ -117,3 +117,65 @@ describe('entity-cycle (§12.1)', () => {
     world.destroy();
   });
 });
+
+describe('orderBy (§6.8, §12.2)', () => {
+  const SortIndex = new Trait({ value: 0 });
+
+  function ordered(world: World) {
+    const entities: Entity[] = new Array(ENTITIES);
+    for (let i = 0; i < ENTITIES; i++) {
+      entities[i] = world.spawn(Position({ x: i }), SortIndex({ value: (i * 7919) % ENTITIES }));
+    }
+    const view = world.query(Position, SortIndex).orderBy(SortIndex.value);
+    world.step();
+    view.first;
+    return { entities, view };
+  }
+
+  it('a clean frame allocates nothing', () => {
+    const world = new World({ pageSize: 64 });
+    const { view } = ordered(world);
+    let sum = 0;
+
+    const bytes = bytesPerPass(PASSES, () => {
+      world.step();
+      for (const chunk of view.chunks()) {
+        const { x } = chunk.get(Position);
+        for (let i = chunk.length - 1; i >= 0; i--) {
+          sum += x[i];
+        }
+      }
+    });
+
+    expect(sum).toBeGreaterThan(0);
+    expect(bytes / ENTITIES).toBeLessThan(NOISE);
+
+    world.destroy();
+  });
+
+  it('a resorting frame allocates nothing', () => {
+    const world = new World({ pageSize: 64 });
+    const { entities, view } = ordered(world);
+    let sum = 0;
+    let cursor = 0;
+
+    const bytes = bytesPerPass(PASSES, () => {
+      world.step();
+      for (let i = 0; i < ENTITIES / 100; i++) {
+        cursor = (cursor + 7919) % ENTITIES;
+        world.set(entities[cursor], SortIndex.value, (cursor * 31) % ENTITIES);
+      }
+      for (const chunk of view.chunks()) {
+        const { x } = chunk.get(Position);
+        for (let i = chunk.length - 1; i >= 0; i--) {
+          sum += x[i];
+        }
+      }
+    });
+
+    expect(sum).toBeGreaterThan(0);
+    expect(bytes / ENTITIES).toBeLessThan(NOISE);
+
+    world.destroy();
+  });
+});

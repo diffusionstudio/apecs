@@ -69,9 +69,11 @@ const WORLD_METHODS = [
   'flush',
 ] as const;
 
-const QUERY_METHODS = ['each', 'chunks', 'entities', 'sortBy', 'dispose'] as const;
+const QUERY_METHODS = ['each', 'chunks', 'entities', 'sortBy', 'orderBy', 'dispose'] as const;
 
 const SORTED_METHODS = ['each', 'entities', 'invalidate', 'rebuild', 'dispose'] as const;
+
+const ORDERED_METHODS = ['each', 'chunks', 'entities', 'invalidate', 'rebuild', 'dispose'] as const;
 
 const CHUNK_METHODS = ['get', 'column', 'entity', 'markChanged'] as const;
 
@@ -316,6 +318,29 @@ describe('sorted surface (§6.3, §14)', () => {
     expect(typeof sorted.first).toBe('number');
     expect(typeof sorted[Symbol.iterator]).toBe('function');
     expect(['clean', 'resort', 'rebuild']).toContain(sorted.isDirty);
+
+    world.destroy();
+  });
+});
+
+describe('ordered surface (§6.3, §6.8, §14)', () => {
+  const Position = new Trait({ x: f32(0) });
+
+  test('an ordered result carries every tier plus the dirty controls', () => {
+    const world = new World();
+    world.spawn(Position({ x: 1 }));
+    const ordered = world.query(Position).orderBy(Position.x);
+
+    for (const name of ORDERED_METHODS) {
+      expect(typeof (ordered as unknown as Record<string, unknown>)[name], name).toBe('function');
+    }
+    expect(typeof ordered.count).toBe('number');
+    expect(typeof ordered.isEmpty).toBe('boolean');
+    expect(typeof ordered.first).toBe('number');
+    expect(typeof ordered[Symbol.iterator]).toBe('function');
+    expect(['clean', 'resort', 'rebuild']).toContain(ordered.isDirty);
+    expect(typeof (ordered as unknown as Record<string, unknown>).sortBy).toBe('undefined');
+    expect(typeof (ordered as unknown as Record<string, unknown>).orderBy).toBe('undefined');
 
     world.destroy();
   });

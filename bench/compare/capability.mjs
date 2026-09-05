@@ -2,15 +2,23 @@
  * Capability benchmark: iterating a query in sorted order, every frame.
  *
  * apecs caches the order and rebuilds only when a key actually moves (SPEC
- * §12.1 budgets *zero work* when nothing changed). koota's QueryResult.sort()
- * re-sorts on demand. bitECS and becsy ship no sorting, so their honest cost is
- * the hand-written one: copy the ids out and Array.sort them — which is also
- * what an apecs or koota user would write without the feature.
+ * §12.1 budgets *zero work* when nothing changed), and offers two ways to get
+ * it: `sortBy` keeps the order in a side array, `orderBy` permutes the
+ * archetype's own rows so the order *is* the storage layout and `chunks` works
+ * (SPEC §6.8). koota's QueryResult.sort() re-sorts on demand. bitECS and becsy
+ * ship no sorting, so their honest cost is the hand-written one: copy the ids
+ * out and Array.sort them — which is also what an apecs or koota user would
+ * write without the feature.
  *
  * Two regimes: `static` (no key ever changes) and `drift` (1% of keys change
  * per frame). The gap between them is the whole point of caching the order.
  *
- *   node capability.mjs <apecs|koota|handwritten> <static|drift>
+ * Every apecs frame includes the `world.step()` a real frame pays: the dirty
+ * check is tick-based (SPEC §8.3), so a view only settles once the tick has
+ * moved past the writes that built it. Without it apecs would be measured
+ * re-sorting every frame in the regime that exists to show it does not.
+ *
+ *   node capability.mjs <apecs|apecs-ordered|apecs-ordered-chunks|koota|handwritten> <static|drift>
  */
 import { measure } from 'mitata';
 
@@ -21,8 +29,11 @@ const key = (i) => (i * 2654435761) % N;
 
 let fn;
 let label;
+/** apecs only: the dirty level the last measured frame left behind, as a check
+ *  that `static` really is measuring a clean view and not a hidden resort. */
+let probe = () => undefined;
 
-if (which === 'apecs') {
+if (which.startsWith('apecs')) {
   const { Trait, World, f32 } = await import('../../dist/index.js');
   const Position = new Trait({ x: f32(0) });
   const SortKey = new Trait({ value: f32(0) });
@@ -31,9 +42,14 @@ if (which === 'apecs') {
   for (let i = 0; i < N; i++) {
     live.push(world.spawn(Position({ x: i }), SortKey({ value: key(i) })));
   }
-  const sorted = world.query(Position, SortKey).sortBy(SortKey.value);
+  const query = world.query(Position, SortKey);
+  const ordered = which !== 'apecs';
+  const view = ordered ? query.orderBy(SortKey.value) : query.sortBy(SortKey.value);
+  const x = Position.x;
+  probe = () => view.isDirty;
   let tick = 0;
-  fn = () => {
+  const frame = () => {
+    world.step();
     if (regime === 'drift') {
       for (let i = 0; i < CHURN; i++) {
         const e = live[(tick * CHURN + i) % N];
@@ -41,9 +57,26 @@ if (which === 'apecs') {
       }
       tick++;
     }
-    sorted.each((p) => (p.x += 1));
   };
-  label = 'apecs sortBy';
+  if (which === 'apecs-ordered-chunks') {
+    fn = () => {
+      frame();
+      // The permute happens on first access, before any walk is open (SPEC §6.8).
+      for (const chunk of view.chunks()) {
+        const column = chunk.column(x);
+        for (let i = chunk.length - 1; i >= 0; i--) {
+          column[i] += 1;
+        }
+      }
+    };
+    label = 'apecs orderBy + chunks';
+  } else {
+    fn = () => {
+      frame();
+      view.each((p) => (p.x += 1));
+    };
+    label = ordered ? 'apecs orderBy + each' : 'apecs sortBy';
+  }
 } else if (which === 'koota') {
   const { createWorld, getStore, trait } = await import('koota');
   const Position = trait({ x: 0 });
@@ -100,4 +133,6 @@ for (let i = 0; i < 3; i++) {
   fn();
 }
 const s = await measure(fn, { min_cpu_time: 1500e6 });
-console.log(JSON.stringify({ library: which, label, regime, avgUs: s.avg / 1000 }));
+console.log(
+  JSON.stringify({ library: which, label, regime, avgUs: s.avg / 1000, dirtyAfter: probe() }),
+);

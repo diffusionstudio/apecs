@@ -331,9 +331,16 @@ interface QueryResult<T extends Term[]> {
   entities(): Float64Array; // snapshot copy — safe under mutation
   sortBy(field: Field, dir?: 'asc' | 'desc'): SortedQueryResult<T>;
   sortBy(cmp: (a: Entity, b: Entity) => number): SortedQueryResult<T>;
+  orderBy(field: Field, dir?: 'asc' | 'desc'): OrderedQueryResult<T>;
 }
 
-interface SortedQueryResult<T> extends Omit<QueryResult<T>, 'chunks' | 'sortBy'> {
+interface SortedQueryResult<T> extends Omit<QueryResult<T>, 'chunks' | 'sortBy' | 'orderBy'> {
+  readonly isDirty: 'clean' | 'resort' | 'rebuild';
+  invalidate(): void;
+  rebuild(): void;
+}
+
+interface OrderedQueryResult<T> extends Omit<QueryResult<T>, 'sortBy' | 'orderBy'> {
   readonly isDirty: 'clean' | 'resort' | 'rebuild';
   invalidate(): void;
   rebuild(): void;
@@ -448,7 +455,7 @@ for (const e of world.query(Position).sortBy(SortIndex.value, 'asc')) {
 }
 ```
 
-Sorting materialises the result into a flat array, which breaks chunk iteration — a sorted query supports Tier 1 and `each`, not `chunks`. `sortBy` returns a distinct cached `QueryResult`, so the unsorted query is unaffected.
+Sorting materialises the result into a flat array, which breaks chunk iteration — a sorted query supports Tier 1 and `each`, not `chunks`. `sortBy` returns a distinct cached `QueryResult`, so the unsorted query is unaffected. It never touches storage, which is why it is the default; when the order is needed in chunk form, `orderBy` (§6.8) lays the archetype rows out in key order instead.
 
 Sorting is the one operation in apecs that is super-linear, so **the sorted view is memoised, and the invalidation rules are part of the contract** — not an optimisation the implementation may skip.
 
@@ -516,6 +523,37 @@ sorted.isDirty; // 'clean' | 'resort' | 'rebuild'
 ```
 
 Needed when the sort key is derived from something apecs cannot see — an external clock, a camera position, a comparator closing over mutable state. The comparator overload of `sortBy` has no key column to watch, so it is **always treated as `resort`-dirty** unless you memoise it yourself with `invalidate()`.
+
+### 6.8 Ordered storage
+
+```ts
+for (const chunk of world.query(Sprite, Layer).orderBy(Layer.z).chunks()) {
+  const { z } = chunk.get(Layer);
+  for (let i = chunk.length - 1; i >= 0; i--) {
+    draw(chunk.entity(i), z[i]); // back to front, z ascending
+  }
+}
+```
+
+`sortBy` keeps the order in a side array and hands out Tier 1 and `each`. `orderBy` inverts that: it **permutes the archetype's own columns** so that row order _is_ key order, and then the result is the base query with nothing added to the chunk path — `chunks()`, `each` and Tier 1 all read storage directly. A separate method rather than a flag, because the semantics differ: it mutates rows that every other query over the archetype sees, and it has `chunks`.
+
+**Surface.** `orderBy(field, dir?)` is memoised on `(query signature, field, direction)` like `sortBy`, returns a distinct object from both the query and its `sortBy`, and exposes the same `isDirty` / `invalidate()` / `rebuild()` hatches. Only a numeric field is accepted; the comparator overload has no column to watch and would permute every frame, so it is rejected. Sorting by a field marks its trait tracked (§8.3), and a query that does not require the key trait is narrowed to the entities that carry it, as for `sortBy`.
+
+**Walk order is key order.** Every apecs walk runs back to front (§9). `orderBy` lays the rows out so that walk is the key order: the last row of the archetype holds the first key. Tier 1 and `each` therefore yield key order as `sortBy` does, and so does `chunks` — pages arrive last to first, and within a page the key order runs from `length - 1` down to `0`, the same direction §9 already asks you to mutate in. Ties keep their previous walk order; a resort that changes no key moves nothing.
+
+**The guarantee is per archetype.** Rows within each matching archetype are in key order; the order _between_ archetypes is unspecified, because chunk and walk boundaries are archetype boundaries and a merge cannot cross them without materialising. Dev warns once per call site when an `orderBy` query matches more than one archetype, so a total order silently degrading into a per-archetype one is caught the day someone adds an optional trait rather than in a screenshot. Use `sortBy` when the order must be total.
+
+**Dirty levels** are the two of §6.7, tracked the same way: a row insert, removal or archetype move flips the structural flag through `archetype.sortedViews`, and a key write is read off the column's `lastWriteTick`. The permutation is not kept across frames — the _data_ is left in order, so the next sort starts from the identity over rows that are already sorted and the adaptive sort (§6.7) finds one run.
+
+| Level       | Work on next access                                             |
+| ----------- | --------------------------------------------------------------- |
+| **clean**   | none — the §6.7 dirty check, one compare per matching archetype |
+| **resort**  | extract keys in row order, adaptive sort, permute               |
+| **rebuild** | the same, over the new row set                                  |
+
+**Cost model.** A clean frame costs the dirty check and nothing else. A resort costs the key extraction plus the sort, then the permutation applied to every column: real data movement, O(moved rows × columns), where `sortBy` moves one `Float64Array`. Rows the permutation leaves in place are not touched, and an identity permutation moves nothing and leaves per-row ticks untouched. Per-row ticks travel with their row (§8.3) and the entity index is rewritten for every row that moved (§10.3), so `world.get`, accessors, `Changed()` and a following structural change all see the entity where it now is.
+
+**The storage-mutation hazard.** A permute moves every row of the archetype, so it is a structural change to all of them at once (§9): it may not happen inside any walk. An ordered result whose next access would permute throws in dev when a walk is open on the world; production skips the permute and serves the stale order for that access. Access the ordered result before the walk begins, or defer. Two `orderBy` views on different keys over one archetype each reorder the rows for themselves on access — last writer wins, and each stays correct when read — but they thrash, and dev warns once per call site. A `sortBy` view over an archetype that a permute reordered rebuilds on its next access.
 
 ---
 
@@ -662,6 +700,8 @@ Each `Changed`/`Added`/`Removed` query stores its own last-seen tick, so two sys
 
 Ticks are written by `world.set` and by cursor setters. **Direct chunk writes bypass them** — call `chunk.markChanged(trait)` or `world.markChanged(e, trait)`. Both forms update the per-row ticks _and_ the column's `lastWriteTick`.
 
+Per-row ticks belong to the row's entity, not the slot: an archetype move carries them across, and an `orderBy` permute (§6.8) moves them with the data, so `Changed()` keeps answering for the entity that was written. `Added()` and `Removed()` are entity-indexed and never see a row move.
+
 Tick columns are allocated only for **tracked** traits: a trait becomes tracked on the first `'change'` subscription, the first `Changed()`/`sortBy` usage, or `{ track: true }`. Untracked traits pay nothing per write.
 
 At scale, prefer pull over push: `Changed()` is a linear scan of a `Uint32Array` with no call overhead, whereas `'change'` is a call per write.
@@ -698,6 +738,7 @@ The classic ECS footgun, specified explicitly.
 | Despawning **the current entity**                | ✅                   |
 | Adding/removing/despawning **any other** entity  | ⚠️ requires deferral |
 | Spawning entities                                | ⚠️ requires deferral |
+| Accessing a dirty `orderBy` result (§6.8)        | ⚠️ requires deferral |
 
 For the unsafe cases:
 
@@ -713,6 +754,8 @@ world.query(Position).each((p, e) => {
 - `query.entities()` returns a snapshot copy and is always safe — the escape hatch when the deferral model is inconvenient.
 
 Dev builds detect unsafe mutation by stamping a structural-version counter on each archetype and asserting it is unchanged across an iteration step. Production builds omit the check.
+
+A permute (§6.8) moves every row of an archetype at once, so it is structural for all of them: it is forbidden inside any walk. Dev throws when a dirty ordered result is accessed under an open walk; production serves the stale order for that access and permutes on the next one outside the walk.
 
 ---
 
@@ -809,16 +852,17 @@ Requirements the implementation must satisfy:
 
 Targets, not measurements — the spec commits to publishing the numbers, and to failing CI on regression beyond a threshold.
 
-| Benchmark                                              | Target                                                                                                                                         |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packed-5` (5 traits, 1 000 entities, iterate all)     | ≥ parity with the fastest JS ECS measured                                                                                                      |
-| `simple-iter` (100 000 entities, 2 traits, arithmetic) | within 1.5× of a hand-written typed-array loop via `each`; within 1.1× via `chunks`                                                            |
-| `frag-iter` (26 archetypes, 100 000 entities)          | linear in matching archetypes, no per-archetype fixed cost above ~200ns                                                                        |
-| `entity-cycle` (spawn/despawn 100 000)                 | no allocation after warmup; steady-state GC pressure ≈ 0                                                                                       |
-| `add-remove` (100 000 trait add + remove)              | two `Map` lookups plus one row move per operation                                                                                              |
-| `sorted-static` (100 000 entities, sort key untouched) | **zero work** — one `lastWriteTick` compare per matching archetype                                                                             |
-| `sorted-drift` (100 000 entities, 1% of keys changed)  | one O(n) key pass + adaptive re-sort; no full `n log n`                                                                                        |
-| `random-access` (100 000 entities, shuffled get + set) | accessor within 25× of a flat typed array indexed by entity id — the archetype tax is three dependent loads (archetype, row, page) against one |
+| Benchmark                                                 | Target                                                                                                                                         |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packed-5` (5 traits, 1 000 entities, iterate all)        | ≥ parity with the fastest JS ECS measured                                                                                                      |
+| `simple-iter` (100 000 entities, 2 traits, arithmetic)    | within 1.5× of a hand-written typed-array loop via `each`; within 1.1× via `chunks`                                                            |
+| `frag-iter` (26 archetypes, 100 000 entities)             | linear in matching archetypes, no per-archetype fixed cost above ~200ns                                                                        |
+| `entity-cycle` (spawn/despawn 100 000)                    | no allocation after warmup; steady-state GC pressure ≈ 0                                                                                       |
+| `add-remove` (100 000 trait add + remove)                 | two `Map` lookups plus one row move per operation                                                                                              |
+| `sorted-static` (100 000 entities, sort key untouched)    | **zero work** — one `lastWriteTick` compare per matching archetype                                                                             |
+| `sorted-drift` (100 000 entities, 1% of keys changed)     | one O(n) key pass + adaptive re-sort; no full `n log n`                                                                                        |
+| `ordered-iter` (100 000 entities, `orderBy` walked clean) | within 1.1× of the unsorted `chunks` walk — the order _is_ the layout, so a clean frame adds only the dirty check (§6.8)                       |
+| `random-access` (100 000 entities, shuffled get + set)    | accessor within 25× of a flat typed array indexed by entity id — the archetype tax is three dependent loads (archetype, row, page) against one |
 
 Comparison set: bitECS, koota, becsy, and a hand-written baseline. The hand-written baseline is the one that matters.
 
@@ -947,6 +991,8 @@ world.queryFirst(...terms): Entity | undefined
 
 query.sortBy(field, dir?) | query.sortBy(cmp): SortedQueryResult
 sorted.isDirty  sorted.invalidate()  sorted.rebuild()
+query.orderBy(field, dir?): OrderedQueryResult
+ordered.isDirty  ordered.invalidate()  ordered.rebuild()
 
 // events
 world.on('add' | 'remove' | 'change', trait, fn): () => void

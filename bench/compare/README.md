@@ -44,18 +44,18 @@ and becsy's `perf` build silently creating only some of the entities it was aske
 
 Recorded in `findings.json`, each with the script that reproduces it:
 
-| Script                                 | Question                                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `cliff-cross.mjs <lib> <k>`            | How does the ergonomic tier scale with the number of distinct traits? One `k` per process. |
-| `chunks-cliff.mjs <k>`                 | Is apecs's `chunks` tier immune to that?                                                   |
-| `scaling.mjs`                          | Fixed cost per `each`/`chunks` call vs marginal cost per entity.                           |
-| `capability.mjs <lib> <static\|drift>` | Sorted-query iteration, against koota and against a hand-written sort.                     |
-| `sorted-isolate.mjs`                   | Where apecs's sorted iteration cost actually goes.                                         |
-| `sorted-scaling.mjs`                   | Is a clean sorted view O(1) in entity count, as SPEC §12.1 budgets?                        |
-| `random-access-breakdown.mjs`          | How much of `random_access` is the shuffled order, and how much is the accessor call?      |
-| `proto-accessor.mjs`                   | Prototype: how much of `random_access` is recoverable, and by which change.                |
-| `proto-accessor-frag.mjs <k>`          | Prototype: does the accessor cache survive archetype fragmentation?                        |
-| `proto-accessor-gap.mjs`               | Why the shipped accessor lands at 14.8 ns where the prototype claimed 8.8.                 |
-| `layout-physics.mjs`                   | Is a flat id-indexed array actually faster than archetype indirection?                     |
-| `accessor-floor.mjs`                   | Where the accessor's 14.8 ns goes, step by step.                                           |
-| `layout-tradeoff.mjs`                  | Random access vs iteration on each layout, fresh and after churn.                          |
+| Script                                 | Question                                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `cliff-cross.mjs <lib> <k>`            | How does the ergonomic tier scale with the number of distinct traits? One `k` per process.                         |
+| `chunks-cliff.mjs <k>`                 | Is apecs's `chunks` tier immune to that?                                                                           |
+| `scaling.mjs`                          | Fixed cost per `each`/`chunks` call vs marginal cost per entity.                                                   |
+| `capability.mjs <lib> <static\|drift>` | Sorted-query iteration: `sortBy`, `orderBy` + `each`, `orderBy` + `chunks`, against koota and a hand-written sort. |
+| `sorted-isolate.mjs`                   | Where apecs's sorted iteration cost actually goes.                                                                 |
+| `sorted-scaling.mjs`                   | Is a clean sorted view O(1) in entity count, as SPEC §12.1 budgets?                                                |
+| `random-access-breakdown.mjs`          | How much of `random_access` is the shuffled order, and how much is the accessor call?                              |
+| `proto-accessor.mjs`                   | Prototype: how much of `random_access` is recoverable, and by which change.                                        |
+| `proto-accessor-frag.mjs <k>`          | Prototype: does the accessor cache survive archetype fragmentation?                                                |
+| `proto-accessor-gap.mjs`               | Why the shipped accessor lands at 14.8 ns where the prototype claimed 8.8.                                         |
+| `layout-physics.mjs`                   | Is a flat id-indexed array actually faster than archetype indirection?                                             |
+| `accessor-floor.mjs`                   | Where the accessor's 14.8 ns goes, step by step.                                                                   |
+| `layout-tradeoff.mjs`                  | Random access vs iteration on each layout, fresh and after churn.                                                  |

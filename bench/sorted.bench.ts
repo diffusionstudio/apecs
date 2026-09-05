@@ -3,6 +3,10 @@
  * whose key nobody touched must cost one `lastWriteTick` compare per
  * archetype, and a 1% drift must cost one key pass plus an adaptive resort —
  * both far below what rebuilding the view from scratch costs.
+ *
+ * `ordered-iter` (SPEC §6.8): walking `orderBy(...).chunks()` on a clean
+ * frame is the plain chunk walk plus the dirty check, against the
+ * materialised `sortBy(...).each()` walk over the same order.
  */
 import { bench, describe } from 'vitest';
 
@@ -68,3 +72,49 @@ describe('sorted-drift', () => {
     }
   });
 });
+
+/** Ordered storage, settled: rows already in key order, so a walk pays only the dirty check. */
+const orderedWorld = sortable(N);
+const ordered = orderedWorld.world.query(Position, SortKey).orderBy(SortKey.value);
+orderedWorld.world.step();
+ordered.first;
+const sortedWorld = sortable(N);
+const sorted = sortedWorld.world.query(Position, SortKey).sortBy(SortKey.value);
+sortedWorld.world.step();
+sorted.first;
+const plain = sortable(N).world.query(Position, SortKey);
+let sink = 0;
+
+describe('ordered-iter', () => {
+  bench('apecs ordered chunks', () => {
+    let sum = 0;
+    for (const chunk of ordered.chunks()) {
+      const { x } = chunk.get(Position);
+      for (let i = chunk.length - 1; i >= 0; i--) {
+        sum += x[i];
+      }
+    }
+    sink += sum;
+  });
+
+  bench('apecs sorted each', () => {
+    let sum = 0;
+    sorted.each((p) => {
+      sum += p.x;
+    });
+    sink += sum;
+  });
+
+  bench('apecs chunks', () => {
+    let sum = 0;
+    for (const chunk of plain.chunks()) {
+      const { x } = chunk.get(Position);
+      for (let i = chunk.length - 1; i >= 0; i--) {
+        sum += x[i];
+      }
+    }
+    sink += sum;
+  });
+});
+
+export { sink };

@@ -1,11 +1,12 @@
 import { snapshotRows, type Archetype, type ArchetypeGraph } from './archetype';
 import { Chunks } from './chunk';
-import { assert } from './debug';
+import { assert, callSite } from './debug';
 import { NULL_ENTITY, type Entity } from './entity';
 import type { EntityIndex } from './entity-index';
 import type { Frame, Iteration } from './iteration';
 import { createMask, maskHas, maskIntersects, maskSuperset, maskWith, type Mask } from './mask';
 import { IndexedQueryResult, type View } from './materialized';
+import { OrderedQueryResult } from './ordered';
 import type { TraitRegistry } from './registry';
 import { shapeOf, type Relation } from './relation';
 import type { Field } from './schema';
@@ -225,6 +226,39 @@ export function signatureOf(terms: readonly Term[]): string {
   return key;
 }
 
+/** Views memoised on (key, direction); the maps exist only once asked for (SPEC §6.7, §6.8). */
+class Memo<K, V extends { dispose(): void }> {
+  #asc: Map<K, V> | null = null;
+  #desc: Map<K, V> | null = null;
+
+  public get(key: K, descending: boolean): V | undefined {
+    return (descending ? this.#desc : this.#asc)?.get(key);
+  }
+
+  public set(key: K, descending: boolean, view: V): void {
+    let map = descending ? this.#desc : this.#asc;
+    if (map === null) {
+      map = new Map();
+      if (descending) {
+        this.#desc = map;
+      } else {
+        this.#asc = map;
+      }
+    }
+    map.set(key, view);
+  }
+
+  public forget(key: K, descending: boolean): void {
+    (descending ? this.#desc : this.#asc)?.delete(key);
+  }
+
+  /** Each view drops its own entry as it goes; deleting under `forEach` is defined. */
+  public dispose(): void {
+    this.#asc?.forEach((view) => view.dispose());
+    this.#desc?.forEach((view) => view.dispose());
+  }
+}
+
 /**
  * The three access tiers over one matching-archetype list. Every walk runs
  * archetypes and rows back to front over row counts fixed when it started,
@@ -244,9 +278,9 @@ export class QueryResult<T extends readonly Term[] = readonly Term[]> {
   #caps: Uint32Array = new Uint32Array(0);
   #chunks: Chunks | undefined;
 
-  /** Sorted views memoised on (field, direction) or comparator identity (SPEC §6.7). */
-  #sorted: Map<Field | Comparator, SortedQueryResult> | null = null;
-  #sortedDescending: Map<Field | Comparator, SortedQueryResult> | null = null;
+  /** Sorted views by (field, direction) or comparator identity; ordered views by (field, direction). */
+  readonly #sorted = new Memo<Field | Comparator, SortedQueryResult>();
+  readonly #ordered = new Memo<Field, OrderedQueryResult>();
   /** Results layered over this archetype list; told about every archetype that joins. */
   readonly #views: View[] = [];
 
@@ -421,28 +455,35 @@ export class QueryResult<T extends readonly Term[] = readonly Term[]> {
   public sortBy(compare: Comparator): SortedQueryResult<T>;
   public sortBy(by: Field | Comparator, direction: 'asc' | 'desc' = 'asc'): SortedQueryResult<T> {
     const descending = typeof by !== 'function' && direction === 'desc';
-    let memo = descending ? this.#sortedDescending : this.#sorted;
-    let sorted = memo?.get(by);
+    let sorted = this.#sorted.get(by, descending);
     if (sorted === undefined) {
-      sorted = this.#cache.sortBy(this, by, descending, () => this.forget(by, descending));
-      if (memo === null) {
-        memo = new Map();
-        if (descending) {
-          this.#sortedDescending = memo;
-        } else {
-          this.#sorted = memo;
-        }
-      }
-      memo.set(by, sorted);
+      sorted = this.#cache.sortBy(this, by, descending, () => this.#sorted.forget(by, descending));
+      this.#sorted.set(by, descending, sorted);
     }
     return sorted;
+  }
+
+  /**
+   * The rows themselves in key order, memoised like `sortBy` (SPEC §6.8).
+   * Dev remembers the call site, so the warnings this can raise name it.
+   */
+  public orderBy(field: Field, direction: 'asc' | 'desc' = 'asc'): OrderedQueryResult<T> {
+    const descending = direction === 'desc';
+    let ordered = this.#ordered.get(field, descending);
+    if (ordered === undefined) {
+      ordered = this.#cache.orderBy(this, field, descending, __DEV__ ? callSite(1) : '', () =>
+        this.#ordered.forget(field, descending),
+      );
+      this.#ordered.set(field, descending, ordered);
+    }
+    return ordered as OrderedQueryResult<T>;
   }
 
   public dispose(): void {
     this.#cache.release(this.#key, this);
     // Views over a dead list would never learn of new archetypes.
-    this.#sorted?.forEach((sorted) => sorted.dispose());
-    this.#sortedDescending?.forEach((sorted) => sorted.dispose());
+    this.#sorted.dispose();
+    this.#ordered.dispose();
     for (const view of this.#views.slice()) {
       view.dispose();
     }
@@ -468,11 +509,6 @@ export class QueryResult<T extends readonly Term[] = readonly Term[]> {
     if (at >= 0) {
       this.#views.splice(at, 1);
     }
-  }
-
-  /** @internal Drops a memo entry; the view is disposing itself. */
-  public forget(by: Field | Comparator, descending: boolean): void {
-    (descending ? this.#sortedDescending : this.#sorted)?.delete(by);
   }
 
   /** @internal Swaps in tracked cursors after a promotion (SPEC §8.3). */
@@ -641,7 +677,6 @@ export class QueryCache {
         assert(!(by instanceof Trait), 'sortBy() takes a field or a comparator');
       }
     } else {
-      const trait = by[$trait];
       if (__DEV__) {
         assert($index in by, 'sortBy() takes a field or a comparator');
         assert(
@@ -649,12 +684,43 @@ export class QueryCache {
           `sortBy() needs a numeric key and "${by.key}" is not one — use the comparator overload`,
         );
       }
-      this.track(trait);
-      if (!maskHas(parent[$plan].all, this.#traits.register(trait))) {
-        base = this.get([...parent[$terms], With(trait)]);
-      }
+      base = this.#keyed(parent, by);
     }
     return new SortedQueryResult(base, parent[$terms], by, descending, this, forget);
+  }
+
+  /** As `sortBy`, for a field only: a comparator has no column to watch (SPEC §6.8). */
+  public orderBy(
+    parent: QueryResult,
+    field: Field,
+    descending: boolean,
+    site: string,
+    forget: () => void,
+  ): OrderedQueryResult {
+    if (__DEV__) {
+      assert(
+        typeof field !== 'function' && $index in field,
+        'orderBy() takes a field — a comparator has no column to watch and would permute every frame (SPEC §6.8)',
+      );
+      assert(field.array !== null, `orderBy() needs a numeric key and "${field.key}" is not one`);
+    }
+    return new OrderedQueryResult(
+      this.#keyed(parent, field),
+      field,
+      descending,
+      this,
+      site,
+      forget,
+    );
+  }
+
+  /** Marks the key's trait tracked, and narrows `parent` to the entities that carry it. */
+  #keyed(parent: QueryResult, field: Field): QueryResult {
+    const trait = field[$trait];
+    this.track(trait);
+    return maskHas(parent[$plan].all, this.#traits.register(trait))
+      ? parent
+      : this.get([...parent[$terms], With(trait)]);
   }
 
   /**

@@ -1,12 +1,21 @@
 import { Column } from './column';
-import { NULL_ENTITY, type Entity } from './entity';
+import { NULL_ENTITY, entityId, type Entity } from './entity';
+import type { EntityIndex } from './entity-index';
 import { createMask, maskKey, maskWith, maskWithout, type Mask } from './mask';
 import { isRelation, pairsOf } from './relation';
 import type { Field } from './schema';
-import type { SortedView } from './sorted';
 import { $fields, $id, $index, $options, $targetField, $trait } from './symbols';
 import { setTracked, type Trait } from './trait';
 import type { TraitRegistry } from './registry';
+
+/** A sorted or ordered view: told when the rows it covers were inserted, removed or moved (SPEC §6.7, §6.8). */
+export interface DirtyView {
+  structuralDirty: boolean;
+}
+
+/** Permute scratch: cycle membership, and the cycles packed as `[len, rows…]`. Never nested. */
+let visited = new Uint8Array(0);
+let cycles = new Uint32Array(0);
 
 /**
  * The entities holding exactly one trait set. Owns the columns for that set,
@@ -31,8 +40,8 @@ export class Archetype {
   readonly entities: Float64Array[] = [];
   public rows = 0;
 
-  /** Sorted views over this archetype; empty for nearly all, so a row change costs one load (SPEC §6.7). */
-  readonly sortedViews: SortedView[] = [];
+  /** Views over this archetype; empty for nearly all, so a row change costs one load (SPEC §6.7). */
+  readonly sortedViews: DirtyView[] = [];
 
   readonly pageSize: number;
   readonly pageShift: number;
@@ -126,6 +135,62 @@ export class Archetype {
     const moved = this.entityAt(last);
     this.setEntity(row, moved);
     return moved;
+  }
+
+  /**
+   * Reorders the rows so that row `i` holds what row `order[i]` held: every
+   * column with its ticks, the entity pages, and the index entries of the
+   * rows that moved. The identity touches nothing and returns false. Cycles
+   * are found once and each column follows them, so a nearly-sorted
+   * archetype costs its moved rows, not its size (SPEC §6.8).
+   */
+  public permute(order: readonly number[], index: EntityIndex): boolean {
+    const rows = this.rows;
+    if (visited.length < rows) {
+      visited = new Uint8Array(rows);
+      // Every cycle has two members or more, so at most 3n/2 entries.
+      cycles = new Uint32Array(rows + (rows >>> 1) + 1);
+    }
+    visited.fill(0, 0, rows);
+    let n = 0;
+    for (let i = 0; i < rows; i++) {
+      if (visited[i] !== 0 || order[i] === i) {
+        continue;
+      }
+      const lengthAt = n++;
+      for (let j = i; visited[j] === 0; j = order[j]) {
+        visited[j] = 1;
+        cycles[n++] = j;
+      }
+      cycles[lengthAt] = n - lengthAt - 1;
+    }
+    if (n === 0) {
+      return false;
+    }
+
+    const columns = this.columns;
+    for (let c = 0; c < columns.length; c++) {
+      columns[c].permute(cycles, n);
+    }
+
+    const { entities, pageShift, pageMask } = this;
+    const at = index.rows;
+    for (let k = 0; k < n;) {
+      const end = k + 1 + cycles[k];
+      let row = cycles[k + 1];
+      const held = entities[row >>> pageShift][row & pageMask];
+      for (k += 2; k < end; k++) {
+        const next = cycles[k];
+        const moved = entities[next >>> pageShift][next & pageMask];
+        entities[row >>> pageShift][row & pageMask] = moved;
+        at[entityId(moved)] = row;
+        row = next;
+      }
+      entities[row >>> pageShift][row & pageMask] = held;
+      at[entityId(held)] = row;
+    }
+    this.invalidateViews();
+    return true;
   }
 
   /** Releases the tail pages no live row reaches (SPEC §10.2). */

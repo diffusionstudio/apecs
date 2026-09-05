@@ -19,6 +19,14 @@ export function warn(message: string): void {
   }
 }
 
+/**
+ * Dev: the stack frame `depth` calls above the function calling this — 0 is
+ * that function itself, 1 its caller — as a `warnOnce` key per call site.
+ */
+export function callSite(depth: number): string {
+  return new Error().stack?.split('\n')[depth + 2] ?? 'unknown call site';
+}
+
 let warned: Set<string> | undefined;
 
 export function warnOnce(key: string, message: string): void {

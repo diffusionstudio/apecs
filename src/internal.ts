@@ -27,6 +27,7 @@ export * from './core/sort';
 export * from './core/walk';
 export * from './core/materialized';
 export * from './core/sorted';
+export * from './core/ordered';
 export * from './core/query';
 export * from './core/accessor';
 export * from './core/world';

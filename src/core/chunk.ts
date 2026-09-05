@@ -1,6 +1,6 @@
 import { snapshotRows, type Archetype } from './archetype';
 import type { Column } from './column';
-import { assert, warnOnce } from './debug';
+import { assert, callSite, warnOnce } from './debug';
 import type { Entity } from './entity';
 import type { Frame, Iteration } from './iteration';
 import type { Field, FieldKind, Plan, Schema } from './schema';
@@ -87,8 +87,7 @@ export class Chunk {
       assert(columns !== undefined, 'this chunk does not hold that trait');
     }
     if (__DEV__ && trait[$options].track) {
-      const site = new Error().stack?.split('\n')[2] ?? 'unknown call site';
-      (this.guards ??= new Map()).set(trait[$id], site);
+      (this.guards ??= new Map()).set(trait[$id], callSite(1));
     }
     if (trait[$kind] === 'aos') {
       return columns![0].pages[this.page];

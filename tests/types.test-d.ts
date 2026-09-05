@@ -266,6 +266,42 @@ describe('sorted queries (§6.7, §11)', () => {
   });
 });
 
+describe('ordered storage (§6.8, §11)', () => {
+  test('an ordered result keeps every tier, chunks included, and the dirty controls', () => {
+    const ordered = world.query(Position, Velocity).orderBy(Position.x, 'desc');
+
+    expectTypeOf(ordered.count).toEqualTypeOf<number>();
+    expectTypeOf(ordered.first).toEqualTypeOf<Entity | undefined>();
+    expectTypeOf(ordered.entities()).toEqualTypeOf<Float64Array>();
+    expectTypeOf(ordered.isDirty).toEqualTypeOf<'clean' | 'resort' | 'rebuild'>();
+    expectTypeOf(ordered.invalidate()).toEqualTypeOf<void>();
+    expectTypeOf(ordered.rebuild()).toEqualTypeOf<void>();
+    ordered.each((p, v, e) => {
+      expectTypeOf(p).toEqualTypeOf<Cursor<PositionSchema>>();
+      expectTypeOf(v).toEqualTypeOf<Cursor<PositionSchema>>();
+      expectTypeOf(e).toEqualTypeOf<Entity>();
+    });
+    for (const e of ordered) {
+      expectTypeOf(e).toEqualTypeOf<Entity>();
+    }
+    for (const chunk of ordered.chunks()) {
+      expectTypeOf(chunk.length).toEqualTypeOf<number>();
+      expectTypeOf(chunk.get(Position).x).toEqualTypeOf<Float32Array>();
+      expectTypeOf(chunk.column(Velocity.y)).toEqualTypeOf<Float32Array>();
+    }
+
+    expectTypeOf(world.query(Position).orderBy(Position.x)).not.toEqualTypeOf(
+      world.query(Position).sortBy(Position.x),
+    );
+    // @ts-expect-error — orderBy takes a field key only; a comparator has no column to watch
+    world.query(Position).orderBy((a: Entity, b: Entity) => a - b);
+    // @ts-expect-error — an ordered result is not re-sorted
+    ordered.sortBy(Position.y);
+    // @ts-expect-error — nor re-ordered
+    ordered.orderBy(Position.y);
+  });
+});
+
 describe('observers (§8.1, §11)', () => {
   test('a handler takes a handle and, for relations, a target', () => {
     const off = world.on('add', Position, (e, target) => {
