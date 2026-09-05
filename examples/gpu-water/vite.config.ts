@@ -23,8 +23,6 @@ export default defineConfig(({ mode }) => ({
         replacement: fileURLToPath(new URL('../../src/index.ts', import.meta.url)),
       },
     ],
-    // The library source lives outside this package; make sure its `react`
-    // import lands on the same copy the app renders with.
     dedupe: ['react', 'react-dom'],
   },
   server: { fs: { allow: [fileURLToPath(new URL('../..', import.meta.url))] } },

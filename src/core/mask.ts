@@ -59,11 +59,17 @@ export function maskWithout(mask: Mask, bit: number): Mask {
   return copy;
 }
 
-/** Every bit of `subset` is set in `mask`. Blocks past either end read as zero. */
+/**
+ * Every bit of `subset` is set in `mask`. Blocks past either end read as zero.
+ *
+ * The `>>> 0` is load-bearing: `&` yields a signed int32, a `Uint32Array` read
+ * is unsigned, and the two disagree for exactly one block value — the one with
+ * bit 31 set. Without it, local trait id 31 (and 63, 95, ...) matches nothing.
+ */
 export function maskSuperset(mask: Mask, subset: Mask): boolean {
   const shared = mask.length < subset.length ? mask.length : subset.length;
   for (let i = 0; i < shared; i++) {
-    if ((mask[i] & subset[i]) !== subset[i]) {
+    if ((mask[i] & subset[i]) >>> 0 !== subset[i]) {
       return false;
     }
   }

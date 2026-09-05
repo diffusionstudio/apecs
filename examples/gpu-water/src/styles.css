@@ -1,0 +1,137 @@
+:root {
+  --ink: #14171c;
+  --muted: #5c6570;
+  --rule: rgba(20, 23, 28, 0.22);
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #f2f3f5;
+  color: var(--ink);
+  font:
+    400 16px/1.6 'EB Garamond',
+    Georgia,
+    'Times New Roman',
+    serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#gpu {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+
+#gpu:active {
+  cursor: grabbing;
+}
+
+aside {
+  position: fixed;
+  top: 40px;
+  left: 44px;
+  width: 340px;
+  pointer-events: none;
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 27px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.hint {
+  font-style: italic;
+}
+
+code {
+  font-family: inherit;
+  font-style: italic;
+  color: var(--ink);
+}
+
+nav {
+  display: flex;
+  gap: 22px;
+  margin: 18px 0 20px;
+  pointer-events: auto;
+}
+
+button {
+  padding: 0 0 3px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+button:hover {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+button[aria-pressed='true'] {
+  color: var(--ink);
+  border-bottom-width: 2px;
+  border-bottom-color: var(--ink);
+}
+
+footer {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+  pointer-events: auto;
+}
+
+a {
+  color: inherit;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+.fatal {
+  position: fixed;
+  inset: auto 24px 24px 24px;
+  max-height: 40vh;
+  padding: 14px 16px;
+  overflow: auto;
+  border: 1px solid rgba(150, 30, 30, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 244, 244, 0.95);
+  color: #7a1414;
+  font:
+    400 12px/1.5 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+}

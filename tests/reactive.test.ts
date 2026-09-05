@@ -912,6 +912,31 @@ describe('dispatch and sharing (§C.3.4, §C.3.5)', () => {
     world.destroy();
   });
 
+  test('a cell subscribed again after its last listener left still fires', () => {
+    // React StrictMode mounts every effect twice, so the first thing every
+    // hook does in development is subscribe, unsubscribe, and subscribe again.
+    const world = syncWorld();
+    const e = world.spawn(Position);
+    const value = traitCell(world, e, Position);
+    const present = hasCell(world, e, Velocity);
+    const matching = queryCell(world, [Position, Velocity]);
+
+    for (const cell of [value, present, matching] as Cell<unknown>[]) {
+      cell.subscribe(() => {})();
+    }
+    const seen = [value, present, matching].map((cell) => watch(cell as Cell<unknown>).seen);
+
+    world.set(e, Position.x, 4);
+    world.add(e, Velocity);
+
+    expect(seen.map((s) => s.length)).toEqual([1, 1, 1]);
+    expect(value.value()).toEqual({ x: 4, y: 0 });
+    expect(present.value()).toBe(true);
+    expect(matching.value()).toEqual([e]);
+
+    world.destroy();
+  });
+
   test('unrelated writes and entities cost no notification', () => {
     const world = syncWorld();
     const e = world.spawn(Position, Velocity);

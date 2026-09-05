@@ -389,7 +389,20 @@ class TraitWatch {
     }
   }
 
+  /**
+   * A cell is put into the dispatch table when it is interned and taken out
+   * when its last listener leaves, so a cell that is subscribed again — React
+   * StrictMode remounts every effect, and any conditional render does the same
+   * — has to be put back. Without this it registers the world observers and
+   * then never appears in `bySource`, so nothing ever marks it: the hook keeps
+   * returning the value it held when it was unsubscribed.
+   */
   public activate(cell: EntityCell<unknown>): void {
+    const id = entityId(cell.entity);
+    const bucket = this.bySource.get(id);
+    if (bucket === undefined || bucket.indexOf(cell) === -1) {
+      this.put(id, cell);
+    }
     if (++this.active === 1) {
       this.listen();
     }
@@ -503,7 +516,7 @@ abstract class QueryCellBase<V, R extends AnyResult = AnyResult> extends CellBas
   }
 
   protected attach(): void {
-    this.watch.activate();
+    this.watch.activate(this);
     if (this.relation !== null) {
       this.relation.activateTarget(this.targetId, this);
     }
@@ -649,7 +662,11 @@ class QueryWatch {
     return undefined;
   }
 
-  public activate(): void {
+  /** Re-registers a cell that was unsubscribed and subscribed again (§C.5). */
+  public activate(cell: QueryCellBase<unknown>): void {
+    if (this.cells.indexOf(cell) === -1) {
+      this.cells.push(cell);
+    }
     if (++this.active === 1) {
       const world = this.registry.world;
       this.offEnter = world.on('enter', this.boundary, this.onCross);

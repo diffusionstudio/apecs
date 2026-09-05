@@ -151,6 +151,19 @@ describe('comparison (§10.1, §10.4)', () => {
     expect(maskSuperset(narrow, maskGrow(maskOf(1), 100))).toBe(true);
   });
 
+  test('superset holds for the sign bit of every block', () => {
+    // `&` yields a signed int32 and a Uint32Array read is unsigned, so a block
+    // whose top bit is set compares unequal to itself without a `>>> 0`. The
+    // symptom is a query on local trait id 31 (or 63, or 95) matching nothing.
+    for (const bit of [31, 63, 95]) {
+      const mask = maskOf(bit);
+
+      expect(maskSuperset(mask, mask)).toBe(true);
+      expect(maskSuperset(maskOf(0, bit), maskOf(bit))).toBe(true);
+      expect(maskSuperset(maskOf(bit), maskOf(0, bit))).toBe(false);
+    }
+  });
+
   test('equality ignores trailing empty blocks', () => {
     expect(maskEquals(maskOf(1), maskGrow(maskOf(1), 100))).toBe(true);
     expect(maskEquals(maskOf(1), maskOf(1, 100))).toBe(false);

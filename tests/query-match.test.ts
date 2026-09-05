@@ -235,4 +235,21 @@ describe('the matching list is maintained incrementally (§10.4)', () => {
 
     world.destroy();
   });
+
+  test('a query matches whatever local trait id the world happened to assign', () => {
+    // Local ids are dense and assigned on first use, so a world with a few
+    // dozen traits puts one of them on the sign bit of a mask block. Nothing
+    // about that trait is special, and a query on it must not come back empty.
+    const many = Array.from({ length: 40 }, () => new Trait({ v: f32(0) }));
+    const world = new World();
+    for (const trait of many) {
+      world.spawn(trait);
+    }
+
+    for (let id = 0; id < many.length; id++) {
+      expect([id, world.query(many[id]).count]).toEqual([id, 1]);
+    }
+
+    world.destroy();
+  });
 });
