@@ -20,6 +20,7 @@ import {
   Or,
   Relation,
   Removed,
+  Schedule,
   Trait,
   With,
   World,
@@ -77,6 +78,8 @@ const ORDERED_METHODS = ['each', 'chunks', 'entities', 'invalidate', 'rebuild', 
 
 const CHUNK_METHODS = ['get', 'column', 'entity', 'markChanged'] as const;
 
+const SCHEDULE_METHODS = ['add', 'remove', 'has', 'clear', 'run'] as const;
+
 describe('exports (§14)', () => {
   test('the entry point exports exactly the documented surface', () => {
     const expected = [
@@ -86,6 +89,7 @@ describe('exports (§14)', () => {
       ...Object.keys(MARKERS),
       ...Object.keys(MODIFIERS),
       'World',
+      'Schedule',
     ].sort();
 
     expect(Object.keys(apecs).sort()).toEqual(expected);
@@ -198,6 +202,38 @@ describe('world surface (§14)', () => {
     expect(Number.isInteger(start)).toBe(true);
     world.step();
     expect(world.tick).toBe(start + 1);
+
+    world.destroy();
+  });
+});
+
+describe('schedule surface (§14, SPEC-SCHEDULE §S.7)', () => {
+  test('every schedule method lives on the prototype', () => {
+    for (const name of SCHEDULE_METHODS) {
+      expect(typeof Schedule.prototype[name], name).toBe('function');
+    }
+  });
+
+  test('size and order are accessors, and add is chainable', () => {
+    const schedule = new Schedule();
+    const same = schedule.add('a', () => {});
+
+    expect(same).toBe(schedule);
+    expect(schedule.size).toBe(1);
+    expect(schedule.order).toEqual(['a']);
+  });
+
+  test('a schedule drives a world through its systems', () => {
+    const world = new World();
+    const Position = new Trait({ x: f32(0) });
+    const entity = world.spawn(Position);
+
+    new Schedule()
+      .add('move', (w) => w.set(entity, Position.x, 1))
+      .add('check', (w) => expect(w.get(entity, Position.x)).toBe(1), { after: 'move' })
+      .run(world);
+
+    expect(world.tick).toBe(1);
 
     world.destroy();
   });

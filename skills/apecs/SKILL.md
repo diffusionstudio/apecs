@@ -112,6 +112,33 @@ At scale prefer pull. And know the one silent failure mode:
 > the write, sorted views don't resort, and `'change'`-driven UI never updates.
 > Dev warns about a missing `markChanged`; production is silent.
 
+## The frame
+
+Systems are plain functions of the world. Drive them yourself, or with a
+`Schedule`:
+
+```ts
+const sim = new Schedule() // owns the clock: it calls world.step()
+  .add('movement', movement)
+  .add('collide', collide, { after: 'movement' });
+
+const render = new Schedule({ step: false }); // a second schedule must not step
+
+function frame(dt: number) {
+  world.set(Time, { delta: dt }); // per-frame values ride a trait, not a parameter
+  sim.run(world);
+  render.run(world);
+}
+```
+
+**Exactly one schedule per frame may advance the clock.** The step count is
+observable: a removal is visible for exactly one tick, so a second `step()` can
+expire a `Removed()` record before a once-per-frame system sees it.
+
+Ordering is by `before`/`after` names, resolved once per mutation into a fixed
+order that disturbs registration order as little as the constraints allow. Dev
+throws on an unknown name, a self-constraint, or a cycle.
+
 ## Relations
 
 ```ts

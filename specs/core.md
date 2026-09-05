@@ -15,7 +15,6 @@
 
 ### Non-goals for v1
 
-- No scheduler. Systems are plain functions; the user owns the loop.
 - No worker parallelism (the layout permits it; the API does not expose it).
 - No serialization module (the layout makes it cheap; it ships later).
 - No rendering, physics, input, or asset integration.
@@ -1000,6 +999,11 @@ world.on('enter' | 'exit', query, fn): () => void
 
 // deferral
 world.defer(fn)  world.flush()
+
+// scheduling — SCHEDULE.md
+new Schedule(options?)
+schedule.add(name, system, options?)  schedule.remove(name)  schedule.has(name)
+schedule.clear()  schedule.size  schedule.order  schedule.run(world)
 ```
 
 ---
@@ -1009,7 +1013,6 @@ world.defer(fn)  world.flush()
 Listed here because the v1 design must not foreclose them.
 
 - **Worker parallelism.** SAB-backed pages, trait-level read/write declarations, page-granular dispatch. §10.5 is the enabling work.
-- **Scheduler.** `apecs/schedule` — systems as functions with `before`/`after` constraints and stages. Kept out of core on purpose.
 - **Serialization.** `world.snapshot()` / `world.restore()` as column copies; tick-based network deltas fall out of §8.3 for free. Boxed and AoS columns need user-supplied codecs.
 - **Devtools.** An archetype/query inspector fed by the same archetype-creation subscription queries use.
 - **Prefabs.** A named archetype template with default values, spawned via a single row memcpy.

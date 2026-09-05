@@ -50,3 +50,6 @@ export type { Comparator, DirtyLevel, SortedQueryResult } from './core/sorted';
 export type { OrderedQueryResult } from './core/ordered';
 export type { IndexedQueryResult } from './core/materialized';
 export type { Chunk } from './core/chunk';
+
+export { Schedule } from './core/schedule';
+export type { ScheduleOptions, System, SystemOptions } from './core/schedule';

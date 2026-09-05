@@ -95,6 +95,36 @@ world.has(Time);
 world.remove(Time);
 ```
 
+### Schedule — the frame
+
+```ts
+const sim = new Schedule() // { step: false } to skip the clock advance
+  .add('movement', movement) // (world) => void
+  .add('collide', collide, { after: 'movement' }) // before / after take a name or an array
+  .add('reap', reap, { after: ['collide', 'movement'] });
+
+sim.run(world); // world.step(), then every system in order
+sim.order; // readonly string[] — the resolved order
+sim.remove('reap'); // also has(name), clear(), size
+```
+
+`run` advances the clock once and calls each system with the world; per-frame
+values like `dt` ride a trait, not a parameter. **Exactly one schedule per frame
+may advance the clock** — a removal is visible for exactly one tick, so a second
+`step()` can expire a `Removed()` record before a once-per-frame system sees it.
+Give the others `{ step: false }`.
+
+Order is resolved once per mutation and compiled into one direct call per system,
+so `run` costs what writing the calls out by hand costs; a CSP without
+`unsafe-eval` falls back to an array loop. Resolution disturbs registration
+order as little as the constraints allow: two systems with no constraint between
+them run in the order they were added. Dev throws on a duplicate name, a
+constraint naming an unregistered system, a self-constraint, and a cycle;
+production drops the offending edge and still runs every system exactly once.
+
+The schedule does not call `world.flush()` — `each` and `chunks` already flush at
+the outermost exit.
+
 ## Reads and writes
 
 ```ts

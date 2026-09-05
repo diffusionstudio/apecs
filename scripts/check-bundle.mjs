@@ -15,6 +15,7 @@ const SURFACE = [
   'Trait',
   'Relation',
   'World',
+  'Schedule',
   'Not',
   'Or',
   'With',
