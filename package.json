@@ -4,6 +4,20 @@
   "description": "A high-performance archetype ECS for TypeScript.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/diffusionstudio/apecs.git"
+  },
+  "homepage": "https://github.com/diffusionstudio/apecs#readme",
+  "bugs": "https://github.com/diffusionstudio/apecs/issues",
+  "keywords": [
+    "ecs",
+    "entity-component-system",
+    "archetype",
+    "game-engine",
+    "typescript",
+    "simulation"
+  ],
   "sideEffects": false,
   "exports": {
     ".": {

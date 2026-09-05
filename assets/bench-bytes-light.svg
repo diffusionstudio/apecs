@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 296" width="880" height="296" role="img" aria-label="Bytes per entity">
+  <style>
+    svg { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; fill: #6b6b6b; }
+    .row-label, .col-label { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; fill: #6b6b6b; }
+    .row-label.is-strong, .col-label.is-strong { fill: #0b0b0b; font-weight: 600; }
+    .value { fill: #6b6b6b; }
+    .value.on-dark { fill: #ffffff; font-weight: 500; }
+    .cell { font-size: 11.5px; }
+    .tick { fill: #949494; font-size: 11px; }
+    .foot { fill: #949494; font-size: 11px; }
+    .grid { stroke: #e0e0e0; stroke-width: 1; }
+    .axis-line { stroke: #949494; stroke-width: 1; }
+    .ref { stroke: #949494; stroke-width: 1; stroke-dasharray: 2 3; }
+    .link { stroke: #c4c4c4; stroke-width: 2; }
+    .bar { fill: #c4c4c4; }
+    .bar.is-strong { fill: #0b0b0b; }
+    .dot { fill: #c4c4c4; stroke: #f6f6f6; stroke-width: 2; }
+    .dot.is-strong { fill: #0b0b0b; }
+    .dot.hollow { fill: #f6f6f6; stroke: #c4c4c4; }
+    .dot.hollow.is-strong { stroke: #0b0b0b; }
+    .win { fill: none; stroke: #008cff; stroke-width: 2.5; }
+  </style>
+  <rect width="880" height="296" rx="20" fill="#f6f6f6" />
+  <g transform="translate(28,28)"><line class="grid" x1="365" y1="8" x2="365" y2="190" /><text class="tick" x="365" y="206" text-anchor="middle">100</text><line class="grid" x1="530" y1="8" x2="530" y2="190" /><text class="tick" x="530" y="206" text-anchor="middle">200</text><line class="grid" x1="695" y1="8" x2="695" y2="190" /><text class="tick" x="695" y="206" text-anchor="middle">300</text><line class="ref" x1="226.4" y1="4" x2="226.4" y2="190" /><text class="tick" x="234.4" y="14" text-anchor="start">16 B payload</text><text class="row-label" x="186" y="31" text-anchor="end">hand-written</text><rect class="bar" x="200" y="18" width="26.4" height="18"><title>hand-written: 16.0 bytes per entity</title></rect><text class="value" x="236.4170148" y="31" text-anchor="start">16.0</text><text class="row-label is-strong" x="186" y="65" text-anchor="end">apecs</text><rect class="bar is-strong" x="200" y="52" width="62.8" height="18"><title>apecs: 38.1 bytes per entity</title></rect><text class="value" x="272.8437612" y="65" text-anchor="start">38.1</text><text class="row-label" x="186" y="99" text-anchor="end">bitECS</text><rect class="bar" x="200" y="86" width="390.5" height="18"><title>bitECS: 236.7 bytes per entity</title></rect><text class="value" x="600.5085624000001" y="99" text-anchor="start">236.7</text><text class="row-label" x="186" y="133" text-anchor="end">koota</text><rect class="bar" x="200" y="120" width="484.3" height="18"><title>koota: 293.5 bytes per entity</title></rect><text class="value" x="694.3232724" y="133" text-anchor="start">293.5</text><text class="row-label" x="186" y="167" text-anchor="end">becsy</text><rect class="bar" x="200" y="154" width="255.6" height="18"><title>becsy: 154.9 bytes per entity</title></rect><text class="value" x="465.55955040000003" y="167" text-anchor="start">154.9</text><line class="axis-line" x1="200" y1="8" x2="200" y2="190" /><text class="tick" x="200" y="206" text-anchor="middle">0</text><text class="foot" x="200" y="234">bytes per entity · lower is better</text></g>
+</svg>
