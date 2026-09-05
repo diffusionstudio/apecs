@@ -18,7 +18,7 @@ export function Overlay() {
 
   return (
     <aside>
-      <h1>WebGPU Water with apecs</h1>
+      <h1>WebGPU water with apecs</h1>
       <p>
         An MLS-MPM fluid solved on the GPU, released as a dam break down a long tank. Every buffer,
         texture and pass is an entity; ordering the frame is a <code>Cascade</code> over a{' '}
@@ -43,7 +43,7 @@ export function Overlay() {
           holtsetio/flow
         </a>
         . Built with{' '}
-        <a href="https://github.com/konstantin-paulus/apecs" target="_blank" rel="noreferrer">
+        <a href="https://github.com/diffusionstudio/apecs" target="_blank" rel="noreferrer">
           apecs
         </a>
         .
