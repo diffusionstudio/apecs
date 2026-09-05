@@ -9,7 +9,7 @@ const canvas = document.getElementById('gpu') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLElement;
 
 const params = new URLSearchParams(location.search);
-const initial = Number(params.get('n')) || 24_000;
+const initial = Number(params.get('n')) || 32_000;
 
 async function main(): Promise<void> {
   const renderer = await Renderer.create(canvas);
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
   });
   window.addEventListener('keydown', (e) => {
     if (e.key === ' ') {
-      sim.jolt();
+      sim.burst();
       e.preventDefault();
     }
   });
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
     renderer.reserve(sim.count);
     let slot = 0;
     let chunks = 0;
-    for (const chunk of sim.drops.chunks()) {
+    for (const chunk of sim.bodies.chunks()) {
       const n = chunk.length;
       renderer.writeColumn(0, slot, chunk.column(Position.x), n);
       renderer.writeColumn(1, slot, chunk.column(Position.y), n);
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   const scene: Scene = { time: 0, spacingPx: 1, spacing: 0.01, glow, cover: sim.cover };
 
   let last = performance.now();
-  let joltAt = last;
+  let burstAt = last;
   let lastX = 0;
   let lastY = 0;
   let smoothVX = 0;
@@ -105,11 +105,11 @@ async function main(): Promise<void> {
     lastY = pointerY;
     world.set(Pointer, { x: pointerX, y: pointerY, vx: smoothVX, vy: smoothVY, on, hold });
 
-    // Left alone, the box gets shaken every few seconds.
+    // Left alone, the flock gets scattered every so often, then re-forms.
     const idle = now - pointerAt > 5000;
-    if (idle && now - joltAt > 14000) {
-      joltAt = now;
-      sim.jolt();
+    if (idle && now - burstAt > 16000) {
+      burstAt = now;
+      sim.burst();
     }
 
     const t0 = performance.now();

@@ -2,9 +2,9 @@ import { useField, useWorld, WorldProvider } from 'apecs/react';
 import type { ReactElement } from 'react';
 
 import type { Renderer } from './renderer';
-import { Fluid, Sim, Stats, fmt } from './sim';
+import { Sim, Stats, Swarm, fmt } from './sim';
 
-const POPULATIONS = [12_000, 24_000, 48_000];
+const POPULATIONS = [16_000, 32_000, 64_000];
 
 export function App(props: { sim: Sim; renderer: Renderer }): ReactElement {
   return (
@@ -12,7 +12,7 @@ export function App(props: { sim: Sim; renderer: Renderer }): ReactElement {
       <Brand />
       <Controls sim={props.sim} renderer={props.renderer} />
       <p className="panel hint">
-        move to stir · <kbd>hold</kbd> to pull · <kbd>space</kbd> to shake the box
+        move to stir · <kbd>hold</kbd> to gather · <kbd>space</kbd> to scatter the flock
       </p>
     </WorldProvider>
   );
@@ -33,8 +33,8 @@ function Brand(): ReactElement {
         apecs <span>× WebGPU</span>
       </h1>
       <p className="claim">
-        A particle fluid in a box. Every rod is an entity; the solver is a chunk walk over apecs
-        columns, and those columns are the vertex buffers.
+        A swarm in a box. Every rod is an entity; steering is a chunk walk over apecs columns, and
+        those columns are the vertex buffers.
       </p>
       <div className="big">
         {fmt(count)}
@@ -67,12 +67,13 @@ function Controls(props: { sim: Sim; renderer: Renderer }): ReactElement {
   const { sim, renderer } = props;
   const world = useWorld();
   const count = useField(Stats.count) ?? 0;
-  const gravity = useField(Fluid.gravity) ?? 0;
-  const viscosity = useField(Fluid.viscosity) ?? 0;
-  const cohesion = useField(Fluid.cohesion) ?? 0;
-  const pressure = useField(Fluid.pressure) ?? 0;
-  const drift = useField(Fluid.drift) ?? 0;
-  const slosh = useField(Fluid.slosh) ?? 0;
+  const align = useField(Swarm.align) ?? 0;
+  const cohere = useField(Swarm.cohere) ?? 0;
+  const separate = useField(Swarm.separate) ?? 0;
+  const flow = useField(Swarm.flow) ?? 0;
+  const churn = useField(Swarm.churn) ?? 0;
+  const speed = useField(Swarm.speed) ?? 0;
+  const drift = useField(Swarm.drift) ?? 0;
   return (
     <section className="panel controls">
       <div className="section">population · spawnMany / despawnMany</div>
@@ -83,46 +84,54 @@ function Controls(props: { sim: Sim; renderer: Renderer }): ReactElement {
           </button>
         ))}
       </div>
-      <div className="section">fluid · world traits</div>
+      <div className="section">swarm · world traits</div>
       <Slider
-        label="gravity"
-        value={gravity}
+        label="align"
+        value={align}
         min={0}
-        max={8}
-        step={0.1}
-        onChange={(v) => world.set(Fluid.gravity, v)}
-      />
-      <Slider
-        label="viscosity"
-        value={viscosity}
-        min={0}
-        max={6}
-        step={0.1}
-        onChange={(v) => world.set(Fluid.viscosity, v)}
-      />
-      <Slider
-        label="pressure"
-        value={pressure}
-        min={0.5}
-        max={6}
-        step={0.1}
-        onChange={(v) => world.set(Fluid.pressure, v)}
-      />
-      <Slider
-        label="cohesion"
-        value={cohesion}
-        min={0}
-        max={5}
-        step={0.1}
-        onChange={(v) => world.set(Fluid.cohesion, v)}
-      />
-      <Slider
-        label="slosh"
-        value={slosh}
-        min={0}
-        max={2}
+        max={3}
         step={0.05}
-        onChange={(v) => world.set(Fluid.slosh, v)}
+        onChange={(v) => world.set(Swarm.align, v)}
+      />
+      <Slider
+        label="cohere"
+        value={cohere}
+        min={0}
+        max={3}
+        step={0.05}
+        onChange={(v) => world.set(Swarm.cohere, v)}
+      />
+      <Slider
+        label="separate"
+        value={separate}
+        min={0.2}
+        max={3}
+        step={0.05}
+        onChange={(v) => world.set(Swarm.separate, v)}
+      />
+      <Slider
+        label="flow"
+        value={flow}
+        min={0}
+        max={3}
+        step={0.05}
+        onChange={(v) => world.set(Swarm.flow, v)}
+      />
+      <Slider
+        label="churn"
+        value={churn}
+        min={0}
+        max={4}
+        step={0.05}
+        onChange={(v) => world.set(Swarm.churn, v)}
+      />
+      <Slider
+        label="speed"
+        value={speed}
+        min={0.2}
+        max={2.5}
+        step={0.05}
+        onChange={(v) => world.set(Swarm.speed, v)}
       />
       <Slider
         label="hue drift"
@@ -130,7 +139,7 @@ function Controls(props: { sim: Sim; renderer: Renderer }): ReactElement {
         min={0}
         max={0.3}
         step={0.005}
-        onChange={(v) => world.set(Fluid.drift, v)}
+        onChange={(v) => world.set(Swarm.drift, v)}
       />
       <div className="section">look</div>
       <Slider

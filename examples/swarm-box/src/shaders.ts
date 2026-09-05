@@ -62,10 +62,6 @@ fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
   return out;
 }
 
-fn plaster(p: vec2f) -> f32 {
-  return vnoise(p * 17.0) * 0.5 + vnoise(p * 41.0) * 0.3 + vnoise(p * 97.0) * 0.2;
-}
-
 /**
  * Coverage of the fluid slab at a point in box coordinates. Outside the box it is zero, not the
  * clamped edge texel — reading the edge smears the mass's shadow into rays across every wall.
@@ -98,13 +94,12 @@ fn fs(in: VSOut) -> @location(0) vec4f {
   var color: vec3f;
 
   if (abs(p.x) >= a || abs(p.y) >= 1.0) {
-    // Marble surround: a bright slab with a bevel that turns down into the opening.
+    // A flat surround. One soft gradient and a hairline turning into the opening, nothing else:
+    // any texture here competes with the swarm for attention.
     let d = max(abs(p.x) - a, abs(p.y) - 1.0);
-    let grain = plaster(in.ndc * vec2f(a, 1.0));
-    let bevel = smoothstep(0.0, 0.030, d);
-    let base = (0.80 + 0.22 * grain) * mix(0.30, 1.12, bevel);
-    let sheen = 0.12 * smoothstep(0.45, 0.0, length(in.ndc - vec2f(-0.55, 0.6)));
-    color = vec3f(base + sheen);
+    let lip = smoothstep(0.0, 0.006, d);
+    let base = mix(0.62, 0.95, lip) - 0.06 * in.ndc.y;
+    color = vec3f(base);
   } else {
     // March the eye ray to whichever of the five inner faces it reaches first.
     let tx = select(1e9, a / abs(p.x), abs(p.x) > 1e-6);
@@ -117,35 +112,30 @@ fn fs(in: VSOut) -> @location(0) vec4f {
     var base: f32;
     var edge: f32;
     var facing: f32;
-    // Each face gets texture coordinates in its own plane; one shared pair streaks the grain.
-    var grain: vec2f;
     if (t == tz) {
-      base = 0.74;
+      base = 0.72;
       edge = min(a - abs(hit.x), 1.0 - abs(hit.y));
       facing = 1.0;
-      grain = hit.xy;
     } else if (t == tx) {
-      base = select(0.62, 0.40, hit.x < 0.0);
+      base = select(0.60, 0.38, hit.x < 0.0);
       edge = min(1.0 - abs(hit.y), depth + hit.z);
       facing = 0.55;
-      grain = vec2f(hit.z, hit.y);
     } else {
       // The ceiling faces away from everything; the floor takes the light almost square on.
-      base = select(0.88, 0.06, hit.y > 0.0);
+      base = select(0.86, 0.05, hit.y > 0.0);
       edge = min(a - abs(hit.x), depth + hit.z);
       facing = select(0.9, 0.1, hit.y > 0.0);
-      grain = vec2f(hit.x, hit.z);
     }
-    base *= 0.55 + 0.45 * plaster(grain * 0.5);
-    // Light falls off toward the back, and the inner corners hold ambient occlusion.
-    base *= 1.0 - 0.38 * deep;
-    base *= 0.40 + 0.60 * smoothstep(0.0, 0.28, edge);
+    // Light falls off toward the back, and the inner corners hold ambient occlusion. These two
+    // gradients are the only shading the box gets; the faces themselves are flat.
+    base *= 1.0 - 0.40 * deep;
+    base *= 0.34 + 0.66 * smoothstep(0.0, 0.32, edge);
 
     // Trace on toward the light; if the fluid slab stands in the way, the face is in shadow.
     let toSlab = (-u.view.fluidZ - hit.z) / LIGHT.z;
     var shade = 1.0;
     if (toSlab > 0.0) {
-      shade = 1.0 - 0.82 * softOccupancy(hit.xy + LIGHT.xy * toSlab, 0.055) * facing;
+      shade = 1.0 - 0.80 * softOccupancy(hit.xy + LIGHT.xy * toSlab, 0.035) * facing;
     }
     // Bounce: the mass is the only coloured thing in the box, so the walls pick its colour up.
     // Sampled just inside the wall, since the wall plane itself sits on the texture's edge.
@@ -156,7 +146,7 @@ fn fs(in: VSOut) -> @location(0) vec4f {
     color = vec3f(base) * shade + bounce;
   }
 
-  color *= 1.0 - 0.20 * smoothstep(0.75, 1.75, length(in.ndc));
+  color *= 1.0 - 0.16 * smoothstep(0.8, 1.8, length(in.ndc));
   return vec4f(pow(clamp(color * u.view.exposure, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), 1.0);
 }
 `;
@@ -218,7 +208,13 @@ fn vs(
   let ndc = vec2f(p.x / u.view.aspect, p.y) * persp / u.view.frame;
   let heading = vec2f(hx, hy);
   let m = length(heading);
-  let dir = select(vec2f(1.0, 0.0), heading / m, m > 1e-4);
+  var dir = select(vec2f(1.0, 0.0), heading / m, m > 1e-4);
+  // A fixed few degrees of scatter per rod. The smoothed flow is very smooth, and without this
+  // the streaks read as combed hair rather than as thousands of separate bodies.
+  let jitter = (seed - 0.5) * 0.42;
+  let cj = cos(jitter);
+  let sj = sin(jitter);
+  dir = vec2f(dir.x * cj - dir.y * sj, dir.x * sj + dir.y * cj);
   let perp = vec2f(-dir.y, dir.x);
   let half = vec2f(u.size.x * (0.42 + 1.35 * m), u.size.y) * persp;
   let offset = (dir * (c.x * half.x) + perp * (c.y * half.y)) / vec2f(u.size.z, u.size.w);
