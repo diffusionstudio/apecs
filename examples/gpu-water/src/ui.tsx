@@ -39,8 +39,8 @@ export function Overlay() {
       </nav>
       <footer>
         Solver after{' '}
-        <a href="https://github.com/holtsetio/flow" target="_blank" rel="noreferrer">
-          holtsetio/flow
+        <a href="https://github.com/matsuoka-601/Particles4All" target="_blank" rel="noreferrer">
+          matsuoka-601/Particles4All
         </a>
         . Built with{' '}
         <a href="https://github.com/diffusionstudio/apecs" target="_blank" rel="noreferrer">
