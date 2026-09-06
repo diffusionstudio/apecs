@@ -61,7 +61,8 @@
     "check:bundle": "node scripts/check-bundle.mjs",
     "bench:compare": "cd bench/compare && node run.mjs && node report.mjs",
     "bench:compare:verify": "cd bench/compare && node verify.mjs",
-    "example:water": "npm --prefix examples/gpu-water run dev"
+    "example:water": "npm --prefix examples/gpu-water run dev",
+    "example:text": "npm --prefix examples/text-flow run dev"
   },
   "peerDependencies": {
     "react": ">=18",

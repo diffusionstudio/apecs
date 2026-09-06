@@ -1,0 +1,92 @@
+:root {
+  --ink: #14171c;
+  --muted: #5c6570;
+  --rule: rgba(20, 23, 28, 0.22);
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #ebecef;
+  color: var(--ink);
+  font:
+    400 15px/1.55 'STIX Two Text',
+    'Times New Roman',
+    Times,
+    serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Transparent outside the sheets and stacked above the explainer, so the
+   page covers the text where the two overlap. */
+#page {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+aside {
+  position: fixed;
+  top: 40px;
+  left: 44px;
+  z-index: 0;
+  width: 340px;
+  pointer-events: none;
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.hint {
+  font-style: italic;
+}
+
+code {
+  font-family: inherit;
+  font-style: italic;
+  color: var(--ink);
+}
+
+footer {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fatal {
+  position: fixed;
+  inset: auto 24px 24px 24px;
+  max-height: 40vh;
+  padding: 14px 16px;
+  overflow: auto;
+  border: 1px solid rgba(150, 30, 30, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 244, 244, 0.95);
+  color: #7a1414;
+  font:
+    400 12px/1.5 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+}
