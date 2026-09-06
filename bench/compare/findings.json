@@ -20,7 +20,7 @@
   },
   "apecsCallCost": {
     "script": "node scaling.mjs",
-    "what": "Fixed cost per call plus marginal cost per entity, single-trait query. Re-measured 2026-09-06: unchanged by the accessor work and by the distinct-source fix \u2014 a one-trait query has no shape collision to lose.",
+    "what": "Fixed cost per call plus marginal cost per entity, single-trait query. Re-measured 2026-09-06: unchanged by the accessor work and by the distinct-source fix — a one-trait query has no shape collision to lose.",
     "each": {
       "fixedNs": 167,
       "perEntityNs": 1.79
@@ -103,30 +103,6 @@
     "bareDenseTablePrototype": 12.7,
     "prototypePlusStampAndOnChange": 12.9,
     "getSetAfterTier1": 26.6
-  },
-  "layoutQuestion": {
-    "question": "Would giving the accessor bitECS's structure (a flat array indexed by entity id) reach bitECS's 1.3x?",
-    "scripts": ["node layout-physics.mjs", "node accessor-floor.mjs", "node layout-tradeoff.mjs"],
-    "answer": "No -- and the premise is wrong. At the pure-memory level the archetype indirection is not slower than a flat id-indexed array (1.43 vs 1.79 ns), so the layout is not what costs apecs. The 14.8 ns is software above the access path.",
-    "layoutPhysicsNsPerEntity": {
-      "iterate_denseColumnSequential": 0.82,
-      "iterate_flatViaIdList": 0.99,
-      "random_flatDirect": 1.79,
-      "random_denseWithIdToRowIndirection": 1.43
-    },
-    "accessorFloorNsPerEntity": {
-      "shippedAccessor": 14.78,
-      "samePathInlinedFused": 7.77,
-      "samePathInlinedSplitReadThenWrite": 12.27,
-      "unpagedFlatColumnIdToRow": 3.23
-    },
-    "breakdownOf14_8": {
-      "irreducibleIdToRowToValue": 3.2,
-      "pagedColumnIndexing": 4.5,
-      "resolvingTwiceForGetThenSet": 4.5,
-      "methodCallBoolStampOnChange": 2.5
-    },
-    "note": "The sparse-storage middle ground referenced here has since been removed from apecs, so table storage is the only layout."
   },
   "sparseRemoval": {
     "what": "storage: 'sparse' was removed. Effect on the head-to-head, comparing merged 3-run figures before and after: neutral to slightly positive, with the structural benchmarks gaining most as branches left the add/remove path. Nothing regressed.",

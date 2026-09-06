@@ -27,6 +27,7 @@ const FINDINGS = 'bench/compare/findings.json';
 const { results, median } = readResults(SPEC_RESULTS);
 const compare = JSON.parse(readFileSync(COMPARE, 'utf8'));
 const findings = JSON.parse(readFileSync(FINDINGS, 'utf8'));
+const sweep = findings.traitCountSweep;
 
 const N = 100_000;
 const RIVALS = ['bitecs', 'koota', 'becsy'];
@@ -309,7 +310,6 @@ function heatmap({ label }) {
  * the colour rides the mark beside it, never the words.
  */
 function cliffChart() {
-  const sweep = findings.traitCountSweep;
   const ks = sweep.ks;
   const series = [
     { key: 'koota', label: 'koota', values: sweep.koota },
@@ -317,9 +317,6 @@ function cliffChart() {
     { key: 'bitecs', label: 'bitECS', values: sweep.bitecs },
     { key: 'apecs', label: 'apecs each', values: sweep.apecs },
   ];
-  // What the same measurement said before distinct generated sources landed:
-  // the shape the rest of this section is about, kept so the fix is legible.
-  const before = sweep.apecsBeforeDistinctSources;
   const H = 372;
   const X0 = 56;
   const X1 = W - 168;
@@ -333,7 +330,8 @@ function cliffChart() {
     s += L(X0, y(g), X1, y(g), 'grid') + T(X0 - 10, y(g) + 4, g, 'tick', 'end');
   }
   s += T(X0 - 10, Y0 - 12, 'ns per entity visit', 'tick', 'start');
-  // Where V8 runs out of inline-cache shapes, which is where every cliff here is.
+  // Where V8 stops inlining a polymorphic call. becsy breaks here; koota breaks
+  // three traits earlier, on the monomorphic-to-polymorphic step.
   const icx = x(3.5);
   s +=
     L(icx, Y0 - 6, icx, Y1, 'ref') + T(icx + 8, Y0 + 4, "V8's four-shape limit", 'tick', 'start');
@@ -352,7 +350,6 @@ function cliffChart() {
     chunks.ns,
     chunks.ks.map((k) => ks.indexOf(k)),
   )}" />`;
-  s += `<polyline class="line s-apecs dashed" points="${points(before.ns)}" />`;
   for (const item of series) {
     s += `<polyline class="line s-${item.key}" points="${points(item.values)}" />`;
     s += item.values
@@ -375,13 +372,6 @@ function cliffChart() {
       label: 'apecs chunks',
       value: chunks.ns.at(-1),
       y: y(chunks.ns.at(-1)),
-      dashed: true,
-    },
-    {
-      key: 'apecs',
-      label: 'apecs, before',
-      value: before.ns.at(-1),
-      y: y(before.ns.at(-1)),
       dashed: true,
     },
   ].sort((a, b) => a.y - b.y);
@@ -723,11 +713,12 @@ const body = `
         </div>
         <div class="tile">
           <div class="figure">${times(
-            Math.max(...findings.traitCountSweep.apecsBeforeDistinctSources.ns) /
-              Math.max(...findings.traitCountSweep.apecs),
+            Math.min(findings.traitCountSweep.koota.at(-1), findings.traitCountSweep.becsy.at(-1)) /
+              findings.traitCountSweep.apecs.at(-1),
           )}</div>
-          <p><strong>Faster at eight traits</strong> than before generated sources were made
-          distinct. The ergonomic tier no longer moves with trait count at all.</p>
+          <p><strong>The next ergonomic tier, at eight traits.</strong> apecs holds
+          ~${num(findings.traitCountSweep.apecs.at(-1), 1)} ns per entity visit at every trait
+          count; koota and becsy lose an inline and never get it back.</p>
         </div>
       </div>
     </section>
@@ -881,25 +872,19 @@ const body = `
     </section>
     <section>
       <div class="section-head">
-        <div class="label">Closed gap</div>
-        <h2>The five-trait cliff, and what it really was</h2>
+        <div class="label">Trait count</div>
+        <h2>The five-trait cliff, and who pays it</h2>
         <p>
-          V8's inline caches hold four shapes, and apecs's ergonomic tier used to tip over at the
-          fifth trait — from ${num(findings.traitCountSweep.apecsBeforeDistinctSources.ns[0], 1)} ns
-          per entity visit to ${num(
-            findings.traitCountSweep.apecsBeforeDistinctSources.ns.at(-1),
-            1,
-          )}. It is now flat at ~${num(
-            findings.traitCountSweep.apecs.at(-1),
-            1,
-          )} ns through eight. Nanoseconds
-          per entity visit, one trait count per process — sweeping inside one process lets earlier
-          shapes pollute the site and manufactures the cliff whether or not it is there.
+          Nanoseconds per entity visit against the number of distinct traits a program uses, one
+          trait count per process — sweeping inside one process lets earlier traits pollute the
+          dispatch site and manufactures a cliff whether or not it is there. Two of the four
+          libraries charge for trait count, and they break in different places: becsy at the fifth
+          trait, koota at the second.
         </p>
       </div>
       <div class="legend">
         <span><i class="key s-apecs"></i>apecs <code>each</code></span>
-        <span><i class="key s-apecs dash"></i>apecs <code>chunks</code> · before the fix</span>
+        <span><i class="key s-apecs dash"></i>apecs <code>chunks</code></span>
         <span><i class="key s-bitecs"></i>bitECS</span>
         <span><i class="key s-koota"></i>koota</span>
         <span><i class="key s-becsy"></i>becsy</span>
@@ -908,25 +893,12 @@ const body = `
         <div class="frame">${cliffChart()}</div>
         <figcaption>
           Nanoseconds per entity visit against the number of distinct traits a program uses with the
-          ergonomic API. apecs is now the fastest ergonomic tier at every trait count — bitECS's
-          flat ~1.5 ns is its raw array API, not an ergonomic one. becsy still has the cliff in the
-          same place; koota starts an order of magnitude behind and stays flat.
+          ergonomic API. apecs is the fastest ergonomic tier at every trait count — bitECS's flat
+          ~${num(findings.traitCountSweep.bitecs[0], 1)} ns is its raw array API, not an ergonomic
+          one. becsy steps at the fifth trait, koota at the second, and both are flat either side of
+          the step.
         </figcaption>
       </figure>
-      <div class="note">
-        <span class="label lab">What it was</span>
-        Not the trait count. apecs generates a driver per query and an accessor class per trait so
-        the hot sites inside them stay monomorphic (SPEC §12.2 rule 2) — but the generated sources
-        were identical text, and V8 keys its compilation cache on source text, so every one of those
-        <code>new&nbsp;Function</code> calls returned the same <code>SharedFunctionInfo</code> and
-        the closures shared one feedback vector. The per-query codegen was real; the specialisation
-        it bought was not. A marker comment that makes each source unlike any other
-        (<code>distinct()</code>) is the whole fix. <code>chunks</code> was always immune — flat at
-        ${num(findings.traitCountSweep.apecsChunks.ns[0], 2)}–${num(
-          Math.max(...findings.traitCountSweep.apecsChunks.ns),
-          2,
-        )} ns through eight traits.
-      </div>
     </section>
     <section>
       <div class="section-head">
