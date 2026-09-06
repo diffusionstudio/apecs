@@ -15,6 +15,18 @@ allocation per entity and no per-frame matching work.
 It ships React and Solid bindings, a scheduler, relations, change detection, and sorted iteration —
 each with a documented cost.
 
+- **Lightweight** — ≈ 17 kB min+gzip for the complete core, everything imported. The package is
+  side-effect free, so a bundler drops what you do not import.
+- **Zero dependencies** — nothing at runtime. `react` and `solid-js` are optional peers, needed only
+  by the bindings that use them.
+- **High performance** — the fastest of the four ECS libraries measured on five of eight benchmarks,
+  and a 100 000-entity integrate pass through `chunks` runs at 0.97× a hand-written typed-array
+  loop over the same data.
+- **Memory efficient** — 38 bytes per entity for `Position` + `Velocity`, where the field data
+  itself is 16 and the next-lightest library measured charges 155.
+
+Every figure above is measured, and [Benchmarks](#benchmarks) says on what.
+
 ```bash
 npm install apecs
 ```
@@ -94,6 +106,13 @@ full runs, every library at its own fastest correct idiom, and an entity-count c
 the run if the libraries are not doing the same work. Full method and every number:
 [benchmark report](reports/2026-09-05-apecs-benchmark.html) ·
 [table](bench/compare/REPORT.md).
+
+One caveat about the word "baseline", because two different hand-written loops carry the name here.
+The charts below divide by the comparison harness's baseline; the 0.97× quoted above comes from the
+in-repo budget suite, whose baseline is a class method rather than a closure over captured arrays
+and measures roughly twice as slow for the same arithmetic. apecs's own figure is the same either
+way — 252 µs against 254 µs — so only the floor differs. Library-against-library comparison in the
+charts is unaffected, since every library is divided by the same one.
 
 ### Against the field
 
