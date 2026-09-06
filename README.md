@@ -54,7 +54,7 @@ npx skills add @diffusionstudio/apecs
 ## Quick start
 
 ```ts
-import { World, Trait, Schedule, f32 } from 'apecs';
+import { World, Trait, f32 } from 'apecs';
 
 // Traits are declared once, at module scope.
 const Position = new Trait({ x: f32(0), y: f32(0) });
@@ -76,11 +76,10 @@ function movement(world: World) {
   });
 }
 
-const sim = new Schedule().add('movement', movement);
-
 function frame(dt: number) {
+  world.step(); // advance the change-detection tick
   world.set(Time, { delta: dt });
-  sim.run(world);
+  movement(world);
 }
 ```
 
