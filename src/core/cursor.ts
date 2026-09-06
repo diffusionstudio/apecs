@@ -1,5 +1,5 @@
 import type { Column, ColumnPage } from './column';
-import { CAN_CODEGEN } from './codegen';
+import { CAN_CODEGEN, distinct } from './codegen';
 import { ApecsError } from './debug';
 import type { Field, Plan } from './schema';
 import { $bind, $fields, $index, $kind, $plan, $poison, $row } from './symbols';
@@ -124,7 +124,7 @@ function accessors(members: readonly Member[], owner: string, p: string, track: 
 
 function generate(shapes: Shapes, width: number, track: boolean): CursorClass {
   const p = slotPrefix(shapes);
-  let source = '';
+  let source = distinct();
 
   for (let s = 1; s < shapes.length; s++) {
     source += `class S${s}{constructor(o){this.${p}o=o}\n`;

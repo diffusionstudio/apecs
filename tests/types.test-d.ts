@@ -224,6 +224,21 @@ describe('query argument extraction (§6.1, §11)', () => {
   });
 });
 
+describe('stopping a walk early (§6.5, §11)', () => {
+  test('a callback may return false, and may return whatever an expression body yields', () => {
+    world.query(Position, Velocity).each((p, v) => {
+      if (p.x > 1) {
+        return false;
+      }
+      p.x += v.x;
+    });
+
+    // The expression body of the idiomatic one-liner yields a number.
+    world.query(Position, Velocity).each((p, v) => (p.x += v.x));
+    world.query(Position).each((p) => p);
+  });
+});
+
 describe('chunks (§6.6, §11)', () => {
   test('a chunk hands out the pages themselves', () => {
     for (const chunk of world.query(Position, MeshOf).chunks()) {

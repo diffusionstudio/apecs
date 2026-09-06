@@ -173,5 +173,12 @@ export type Values<T extends readonly unknown[]> = T extends readonly [
   ? [...TermValue<H>, ...Values<R>]
   : [];
 
-/** The `each` callback: the data terms positionally, then the entity (SPEC §6.5). */
+/**
+ * The `each` callback: the data terms positionally, then the entity (SPEC §6.5).
+ *
+ * Declared as returning `void`, which in a callback position lets it return
+ * anything — deliberately, because `each((p, v) => (p.x += v.x))` is an
+ * expression body whose value is a number. Only the exact value `false` stops
+ * the walk, so no such body can stop one by accident.
+ */
 export type EachFn<T extends readonly unknown[]> = (...args: [...Values<T>, Entity]) => void;

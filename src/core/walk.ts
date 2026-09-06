@@ -1,6 +1,6 @@
 import type { Archetype } from './archetype';
 import type { Column } from './column';
-import { CAN_CODEGEN } from './codegen';
+import { CAN_CODEGEN, distinct } from './codegen';
 import { cursorClassFor, type Cursor } from './cursor';
 import { assert } from './debug';
 import { entityId, type Entity } from './entity';
@@ -134,9 +134,14 @@ export class Binding {
 /**
  * The row loop of one page: advance every cursor, read the boxed slots, call
  * the callback. `frame` and `base` are the dev-only iteration cursor.
+ *
+ * Returns false when the callback asked to stop, which the walk above it takes
+ * as `break`. The test is `=== false`, so a bare `return` does not stop a walk
+ * and neither does the number an arrow body like `(p, v) => (p.x += v.x)`
+ * evaluates to (SPEC §6.5).
  */
 export type Driver = (
-  fn: (...args: any[]) => void,
+  fn: (...args: any[]) => unknown,
   binding: Binding,
   handles: Float64Array,
   start: number,
@@ -144,7 +149,7 @@ export type Driver = (
   base: number,
   filter: RowFilter | null,
   page: number,
-) => void;
+) => boolean;
 
 const CURSOR = 1;
 const BOXED = 2;
@@ -193,8 +198,10 @@ function generateDriver(layout: number, arity: number, filtered: boolean): Drive
 
   const accept = filtered ? 'if(!q.accept(h[i],y,i))continue;' : '';
   const source =
+    distinct() +
     `const c=b.cursors,g=b.boxedPage;${declarations}` +
-    `for(let i=s;i>=0;i--){${accept}${advance}${__DEV__ ? 'f.row=k|i;' : ''}n(${call}h[i])}`;
+    `for(let i=s;i>=0;i--){${accept}${advance}${__DEV__ ? 'f.row=k|i;' : ''}` +
+    `if(n(${call}h[i])===false)return false}return true`;
   return new Function('R', `return function(n,b,h,s,f,k,q,y){${source}}`)($row) as Driver;
 }
 
@@ -215,8 +222,11 @@ const genericDriver: Driver = (fn, binding, handles, start, frame, base) => {
     if (__DEV__) {
       frame.row = base | i;
     }
-    invoke(fn, args, arity, handles[i] as Entity);
+    if (invoke(fn, args, arity, handles[i] as Entity) === false) {
+      return false;
+    }
   }
+  return true;
 };
 
 const genericFiltered: Driver = (fn, binding, handles, start, frame, base, filter, page) => {
@@ -239,33 +249,32 @@ const genericFiltered: Driver = (fn, binding, handles, start, frame, base, filte
     if (__DEV__) {
       frame.row = base | i;
     }
-    invoke(fn, args, arity, entity);
+    if (invoke(fn, args, arity, entity) === false) {
+      return false;
+    }
   }
+  return true;
 };
 
 /** The callback call, with the common arities spelled out so no `apply` is needed. */
 export function invoke(
-  fn: (...args: any[]) => void,
+  fn: (...args: any[]) => unknown,
   args: unknown[],
   arity: number,
   entity: Entity,
-): void {
+): unknown {
   switch (arity) {
     case 0:
-      fn(entity);
-      break;
+      return fn(entity);
     case 1:
-      fn(args[0], entity);
-      break;
+      return fn(args[0], entity);
     case 2:
-      fn(args[0], args[1], entity);
-      break;
+      return fn(args[0], args[1], entity);
     case 3:
-      fn(args[0], args[1], args[2], entity);
-      break;
+      return fn(args[0], args[1], args[2], entity);
     default:
       args[arity] = entity;
-      fn.apply(undefined, args);
+      return fn.apply(undefined, args);
   }
 }
 

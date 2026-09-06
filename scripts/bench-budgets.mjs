@@ -31,7 +31,10 @@ export const BUDGETS = [
   {
     name: 'packed-5 · each vs baseline',
     spec: 'parity',
-    limit: 12,
+    // Was 12: five traits in one process used to share one compiled driver and
+    // one compiled cursor, and the sites inside them went megamorphic. Distinct
+    // generated sources put this at ~2× (SPEC §12.2, rule 2).
+    limit: 3,
     value: (m) => m('packed-5', 'apecs each') / m('packed-5', 'baseline'),
     format: (v) => `${v.toFixed(2)}×`,
   },

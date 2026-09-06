@@ -56,15 +56,15 @@ world.query(Position, Velocity).each((p, v) => {
 
 This is the decision that matters. Each row is honest about its cost.
 
-| Situation                                           | Use                          | Cost                                      |
-| --------------------------------------------------- | ---------------------------- | ----------------------------------------- |
-| One entity, cold path (UI, editor, event handler)   | `world.get(e, Position)`     | resolves per call; **allocates a copy**   |
-| One entity, one value, cold path                    | `world.get(e, Position.x)`   | resolves per call; no allocation          |
-| One entity, hot path, arbitrary order               | `world.accessor(Position.x)` | resolve once; ~2 indirections per access  |
-| Many entities, ergonomic, up to a few thousand      | `query.each((p, v) => …)`    | 1.1–1.5× a raw loop, zero allocation      |
-| Many entities, arithmetic, tens of thousands and up | `query.chunks()`             | ~1.1× a raw loop; no tracking, no checks  |
-| Need deterministic order                            | `query.sortBy(field, dir)`   | memoised; O(n) resort, O(n log n) rebuild |
-| Need parent-before-child order                      | `query(…, Cascade(ChildOf))` | materialised; `each`/iteration, no chunks |
+| Situation                                           | Use                          | Cost                                                   |
+| --------------------------------------------------- | ---------------------------- | ------------------------------------------------------ |
+| One entity, cold path (UI, editor, event handler)   | `world.get(e, Position)`     | resolves per call; **allocates a copy**                |
+| One entity, one value, cold path                    | `world.get(e, Position.x)`   | resolves per call; no allocation                       |
+| One entity, hot path, arbitrary order               | `world.accessor(Position.x)` | resolve once; ~2 indirections per access               |
+| Many entities, ergonomic, up to a few thousand      | `query.each((p, v) => …)`    | ~2× a raw loop, zero allocation; `return false` breaks |
+| Many entities, arithmetic, tens of thousands and up | `query.chunks()`             | ~1.1× a raw loop; no tracking, no checks               |
+| Need deterministic order                            | `query.sortBy(field, dir)`   | memoised; O(n) resort, O(n log n) rebuild              |
+| Need parent-before-child order                      | `query(…, Cascade(ChildOf))` | materialised; `each`/iteration, no chunks              |
 
 Rules of thumb:
 

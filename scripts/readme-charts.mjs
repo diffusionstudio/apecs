@@ -8,7 +8,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const SRC = 'reports/2026-09-05-apecs-benchmark.html';
+const SRC = 'reports/2026-09-06-apecs-benchmark.html';
 const OUT = 'assets';
 const PAD = 28;
 

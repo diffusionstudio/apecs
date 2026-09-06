@@ -53,7 +53,12 @@ export class ListWalk {
     this.#binding.retrack(trait);
   }
 
-  public each(fn: (...args: any[]) => void, entities: Float64Array, n: number, step: number): void {
+  public each(
+    fn: (...args: any[]) => unknown,
+    entities: Float64Array,
+    n: number,
+    step: number,
+  ): void {
     const iteration = this.#iteration;
     const frame = iteration.enter();
     // A materialised walk has no unvisited row a swap-remove could disturb (SPEC §9).
@@ -106,7 +111,7 @@ export class ListWalk {
     return out;
   }
 
-  #walk(fn: (...args: any[]) => void, entities: Float64Array, n: number, step: number): void {
+  #walk(fn: (...args: any[]) => unknown, entities: Float64Array, n: number, step: number): void {
     const filter = this.#filter;
     const ticks = this.#ticks;
     if (filter !== null && !filter.begin(ticks)) {
@@ -169,7 +174,10 @@ export class ListWalk {
       for (let b = 0; b < boxedArg.length; b++) {
         args[boxedArg[b]] = boxedPage[b][i];
       }
-      invoke(fn, args, arity, entity);
+      // A callback that returned false is asking to stop (SPEC §6.5).
+      if (invoke(fn, args, arity, entity) === false) {
+        return;
+      }
     }
   }
 }

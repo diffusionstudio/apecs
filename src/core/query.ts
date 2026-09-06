@@ -361,7 +361,7 @@ export class QueryResult<T extends readonly Term[] = readonly Term[]> {
     }
   }
 
-  #eachAll(fn: (...args: any[]) => void, frame: Frame): void {
+  #eachAll(fn: (...args: any[]) => unknown, frame: Frame): void {
     const archetypes = this[$archetypes];
     const caps = (this.#caps = snapshotRows(archetypes, this.#caps));
     const binding = this.#binding;
@@ -391,7 +391,12 @@ export class QueryResult<T extends readonly Term[] = readonly Term[]> {
           boxedPage[b] = boxedColumn[b].pages[page] as unknown[];
         }
 
-        driver(fn, binding, archetype.entities[page], i, frame, page << pageShift, null, page);
+        // A callback that returned false is asking to stop, here and above.
+        if (
+          !driver(fn, binding, archetype.entities[page], i, frame, page << pageShift, null, page)
+        ) {
+          return;
+        }
         i = pageMask;
       }
     }
@@ -401,7 +406,7 @@ export class QueryResult<T extends readonly Term[] = readonly Term[]> {
    * The same walk with a per-row tick predicate. A separate loop so the
    * unfiltered path carries none of it (SPEC §8.3).
    */
-  #eachFiltered(fn: (...args: any[]) => void, frame: Frame, filter: RowFilter): void {
+  #eachFiltered(fn: (...args: any[]) => unknown, frame: Frame, filter: RowFilter): void {
     const ticks = this.#ticks;
     if (!filter.begin(ticks)) {
       return;
@@ -437,7 +442,11 @@ export class QueryResult<T extends readonly Term[] = readonly Term[]> {
           boxedPage[b] = boxedColumn[b].pages[page] as unknown[];
         }
 
-        driver(fn, binding, archetype.entities[page], i, frame, page << pageShift, filter, page);
+        if (
+          !driver(fn, binding, archetype.entities[page], i, frame, page << pageShift, filter, page)
+        ) {
+          return;
+        }
         i = pageMask;
       }
     }

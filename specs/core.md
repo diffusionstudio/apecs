@@ -325,7 +325,7 @@ interface QueryResult<T extends Term[]> {
   readonly first: Entity | undefined;
 
   [Symbol.iterator](): Iterator<Entity>;
-  each(fn: (...args: [...Values<T>, Entity]) => void): void;
+  each(fn: (...args: [...Values<T>, Entity]) => void): void; // return false to stop
   chunks(): Iterable<Chunk<T>>;
   entities(): Float64Array; // snapshot copy — safe under mutation
   sortBy(field: Field, dir?: 'asc' | 'desc'): SortedQueryResult<T>;
@@ -397,6 +397,10 @@ world.query(Position, Velocity).each((p, v, entity) => {
 | AoS (factory)        | the reference itself | `mesh.position.set(...)`; replace via `world.set` |
 | tag / `Not` / `With` | _nothing_            | —                                                 |
 | `Optional(T)`        | cursor or `null`     | —                                                 |
+
+**Returning `false` stops the walk**, which is `break`: the rest of the page, the rest of the archetype and every archetype after it are skipped, and the walk closes exactly as a completed one does, so deferred work drains and cursors are poisoned. The generated driver tests `=== false` and returns to the walk above it, which returns in turn — so neither a bare `return` nor the number an expression body like `(p, v) => (p.x += v.x * dt)` evaluates to can stop a walk by accident. The check is inside the row loop and costs under 1%: 0.560 ms against 0.557 ms over 100 000 entities, which is inside run-to-run noise.
+
+`EachFn` is declared as returning `void`, which in a callback position accepts a function returning anything — deliberately, so the expression-body idiom above keeps type-checking.
 
 Cursors are **borrowed**. Retaining one past the callback is a dev-mode error (the cursor is poisoned on exit); in production it silently reads whatever row the cursor was last bound to.
 
@@ -868,7 +872,22 @@ Comparison set: bitECS, koota, becsy, and a hand-written baseline. The hand-writ
 ### 12.2 Rules the implementation must not break
 
 1. No allocation in `each` or `chunks` after warmup — asserted by a heap-delta test in CI.
-2. No megamorphic call sites in the iteration path: cursor classes are per-trait, not shared.
+2. No megamorphic call sites in the iteration path: cursor classes are per-trait, drivers are per
+   query, and a row walk's step is per walk — none of them shared.
+
+   **Distinct source text is part of that rule, not a detail of it.** V8 keys its compilation cache
+   on the source string, so two `new Function` calls with identical text return the same
+   `SharedFunctionInfo`, and every closure built from it shares one feedback vector. Generating per
+   query then buys nothing: the call site inside the driver is one site for the whole program and
+   goes megamorphic once five callbacks reach it. Every generated source is prefixed with
+   `distinct()` (src/core/codegen.ts) for this reason. Measured on 1 000 entities, one loop per
+   trait, one process per k — `each`, ns/entity:
+
+   | traits in the program | 1   | 4   | 6    | 12   |
+   | --------------------- | --- | --- | ---- | ---- |
+   | shared source         | 2.8 | 6.6 | 19.1 | 20.7 |
+   | distinct source       | 2.5 | 1.9 | 1.9  | 2.0  |
+
 3. No `Proxy` anywhere in the hot path.
 4. No generator functions in the hot path — `chunks()` returns a reusable iterator object with a monomorphic `next`.
 5. Dev-only assertions are behind `__DEV__` and dropped entirely by the production build.

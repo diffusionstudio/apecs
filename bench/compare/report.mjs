@@ -248,13 +248,13 @@ w();
 }
 
 w();
-w('## The finding that matters most: the ergonomic tier falls off a cliff at five traits');
+w('## The finding that mattered most: an ergonomic tier that fell off a cliff at five traits');
 w();
 w("V8's inline caches hold four shapes before going megamorphic. Every library here that offers a");
 w(
-  'per-entity ergonomic accessor dispatches through a shared internal call site, and once a program',
+  'per-entity ergonomic accessor dispatches through some internal call site, and once a program uses',
 );
-w('uses enough distinct traits with it, that site tips over.');
+w('enough distinct traits with it, that site can tip over. apecs used to. It no longer does.');
 w();
 w(
   'ns per entity-visit, ergonomic tier, **one trait-count per process** — sweeping `k` inside a single',
@@ -270,24 +270,52 @@ w('| --- |' + sweep.ks.map(() => ' --- |').join(''));
 for (const lib of ['apecs', 'bitecs', 'koota', 'becsy']) {
   w(`| ${TITLE[lib]} | ` + sweep[lib].map((v) => v.toFixed(1)).join(' | ') + ' |');
 }
+w(
+  '| apecs, before the fix below | ' +
+    sweep.apecsBeforeDistinctSources.ns.map((v) => v.toFixed(1)).join(' | ') +
+    ' |',
+);
 w();
 w(
-  '- **apecs is the fastest ergonomic tier measured below five traits** (1.9–2.9 ns) and the worst hit',
+  '- **apecs is now the fastest ergonomic tier measured, at every trait count** — flat at ~1.9 ns, where',
 );
 w(
-  '  above it: **17× slower at eight traits than at one.** Any real program uses more than four traits.',
+  '  it used to reach 42.8 ns at eight traits. bitECS is faster still at ~1.5, but that is its raw',
 );
-w('- **becsy** has the same cliff in the same place, 7×.');
+w('  array API; it has no ergonomic tier to compare.');
+w('- **becsy** still has the cliff, in the same place, 3.7×.');
 w('- **koota** degrades only 1.5×, but starts an order of magnitude behind.');
 w('- **bitECS is immune** — flat at ~1.5 ns. It has no per-component dispatch to go megamorphic.');
 w();
+w('### What the cliff actually was');
+w();
 w(
-  'SPEC §12.2 rule 2 says "no megamorphic call sites in the iteration path: cursor classes are per-trait,',
+  'Not the shape count as such. apecs generates a driver per query and an accessor class per trait so',
 );
 w(
-  'not shared." Per-trait cursor classes are precisely what makes the shared dispatch site polymorphic.',
+  'that the hot sites inside them stay monomorphic — SPEC §12.2 rule 2. The generated sources were',
 );
-w('The rule is aiming at the right target and the mechanism defeats it.');
+w(
+  'identical text, and **V8 keys its compilation cache on source text**: every one of those `new Function`',
+);
+w(
+  'calls returned the same `SharedFunctionInfo`, so all the closures shared a single feedback vector.',
+);
+w('The per-query codegen was real and the specialisation it bought was not.');
+w();
+w('The fix is a marker comment that makes each generated source unlike any other (`distinct()`,');
+w(
+  'src/core/codegen.ts). Nothing else changed — same drivers, same cursor classes, same walk. It moved',
+);
+w(
+  "`packed_5`'s ergonomic tier from 33.0 µs to 9.8 µs and left every one-trait benchmark where it was.",
+);
+w();
+w('The lesson generalises past this library: a per-shape codegen strategy is only as good as the');
+w(
+  'distinctness of the text it emits, and the failure is invisible in every measurement that uses one',
+);
+w('shape at a time.');
 w();
 w(
   "**apecs's `chunks` tier is completely immune** and is the fastest thing in this report — flat at",
@@ -476,7 +504,8 @@ w(
 );
 w('of the practical ceiling for a design that does not degrade under fragmentation.');
 w();
-w('The iteration path was not touched and did not move: `each` is still');
+w('The iteration path was not touched by the accessor work, and the cliff fix did not move it');
+w('either — a one-trait query has no shape collision to lose. `each` is still');
 w(
   `${f.apecsCallCost.each.fixedNs} ns + ${f.apecsCallCost.each.perEntityNs} ns/entity, \`chunks\` still ${f.apecsCallCost.chunks.fixedNs} ns + ${f.apecsCallCost.chunks.perEntityNs} ns/entity.`,
 );

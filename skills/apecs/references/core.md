@@ -184,7 +184,7 @@ the type level:
 ```ts
 query.count   query.isEmpty   query.first
 for (const e of query) …
-query.each((…values, entity) => {})      // entity is always last
+query.each((…values, entity) => {})      // entity is always last; return false to stop
 query.chunks()
 query.entities()                          // snapshot copy — safe under mutation
 query.sortBy(field, 'asc' | 'desc')       // → SortedQueryResult
@@ -207,6 +207,11 @@ world.query(Position, Velocity).each((p, v) => {
   p.x += v.x * dt;
 });
 ```
+
+**Return `false` to stop the walk** — it is `break`, and the walk still closes
+cleanly, so deferred work drains. The test is `=== false`, so neither a bare
+`return` nor the number `(p, v) => (p.x += v.x * dt)` evaluates to stops one by
+accident. There is no iterator form of this tier: `each` is it.
 
 Cursors are **borrowed**: retaining one past the callback is a dev-mode error (the
 cursor is poisoned on exit) and in production silently reads whatever row it was

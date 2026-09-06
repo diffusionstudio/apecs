@@ -47,6 +47,7 @@ Recorded in `findings.json`, each with the script that reproduces it:
 | Script                                 | Question                                                                                                           |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `cliff-cross.mjs <lib> <k>`            | How does the ergonomic tier scale with the number of distinct traits? One `k` per process.                         |
+| `cliff-tiers.mjs <tier> <k>`           | The same sweep across apecs's own two tiers, `each` and `chunks`.                                                  |
 | `chunks-cliff.mjs <k>`                 | Is apecs's `chunks` tier immune to that?                                                                           |
 | `scaling.mjs`                          | Fixed cost per `each`/`chunks` call vs marginal cost per entity.                                                   |
 | `capability.mjs <lib> <static\|drift>` | Sorted-query iteration: `sortBy`, `orderBy` + `each`, `orderBy` + `chunks`, against koota and a hand-written sort. |

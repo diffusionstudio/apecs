@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CAN_CODEGEN, probeCodegen } from '../src/internal';
+import * as apecs from '../src/internal';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -53,5 +54,49 @@ describe('capability probe (§6.5)', () => {
     void module.CAN_CODEGEN;
 
     expect(probes()).toHaveLength(1);
+  });
+});
+
+describe('generated sources are distinct (§12.2, rule 2)', () => {
+  test('two calls never produce the same marker', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 100; i++) {
+      seen.add(apecs.distinct());
+    }
+
+    expect(seen.size).toBe(100);
+  });
+
+  test('a marker is a comment, so it costs nothing at runtime', () => {
+    expect(apecs.distinct()).toMatch(/^\/\/\d+\n$/);
+  });
+
+  test('nothing hands V8 one source twice — the cache would share the feedback', () => {
+    const real = globalThis.Function;
+    const sources: string[] = [];
+    const spy = function (...args: unknown[]) {
+      sources.push(String(args.at(-1)));
+      return real(...(args as string[]));
+    };
+    spy.prototype = real.prototype;
+
+    vi.stubGlobal('Function', spy);
+    try {
+      const A = new apecs.Trait({ value: apecs.f32(0) });
+      const B = new apecs.Trait({ value: apecs.f32(0) });
+      const world = new apecs.World();
+      world.spawn(A, B);
+      // Same shape, same layout, same arity: the pair that would collide.
+      world.query(A).each(() => {});
+      world.query(B).each(() => {});
+      world.destroy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    // Every generated source, not just the ones carrying a marker: a source
+    // that repeats is exactly the collision this guards against.
+    expect(sources.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(sources).size).toBe(sources.length);
   });
 });

@@ -44,5 +44,25 @@ describe('the fallback cursor (§6.5)', () => {
     expect(fallback.cursorClassFor(Velocity, false)).not.toBe(cursor);
   });
 
+  test('a callback can stop the reflective walk too (§6.5)', () => {
+    const { Trait, World, f32 } = fallback;
+    const Position = new Trait({ x: f32(0), y: f32(0) });
+
+    const world = new World({ pageSize: 4 });
+    for (let i = 0; i < 9; i++) {
+      world.spawn(Position({ x: i }));
+    }
+
+    let seen = 0;
+    world.query(Position).each(() => {
+      seen++;
+      return false;
+    });
+
+    expect(seen).toBe(1);
+
+    world.destroy();
+  });
+
   defineEachCases(async () => fallback);
 });

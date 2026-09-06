@@ -317,6 +317,9 @@ function cliffChart() {
     { key: 'bitecs', label: 'bitECS', values: sweep.bitecs },
     { key: 'apecs', label: 'apecs each', values: sweep.apecs },
   ];
+  // What the same measurement said before distinct generated sources landed:
+  // the shape the rest of this section is about, kept so the fix is legible.
+  const before = sweep.apecsBeforeDistinctSources;
   const H = 372;
   const X0 = 56;
   const X1 = W - 168;
@@ -343,12 +346,13 @@ function cliffChart() {
   const points = (values, indices = values.map((_, i) => i)) =>
     indices.map((i, n) => `${x(i).toFixed(1)},${y(values[n]).toFixed(1)}`).join(' ');
 
-  // apecs chunks is the same entity on its other tier: same hue, dashed.
+  // apecs's other tiers are the same entity: same hue, dashed.
   const chunks = sweep.apecsChunks;
   s += `<polyline class="line s-apecs dashed" points="${points(
     chunks.ns,
     chunks.ks.map((k) => ks.indexOf(k)),
   )}" />`;
+  s += `<polyline class="line s-apecs dashed" points="${points(before.ns)}" />`;
   for (const item of series) {
     s += `<polyline class="line s-${item.key}" points="${points(item.values)}" />`;
     s += item.values
@@ -371,6 +375,13 @@ function cliffChart() {
       label: 'apecs chunks',
       value: chunks.ns.at(-1),
       y: y(chunks.ns.at(-1)),
+      dashed: true,
+    },
+    {
+      key: 'apecs',
+      label: 'apecs, before',
+      value: before.ns.at(-1),
+      y: y(before.ns.at(-1)),
       dashed: true,
     },
   ].sort((a, b) => a.y - b.y);
@@ -711,11 +722,12 @@ const body = `
           array.</p>
         </div>
         <div class="tile">
-          <div class="figure is-gap">${times(
-            Math.max(...findings.traitCountSweep.apecs) / findings.traitCountSweep.apecs[0],
+          <div class="figure">${times(
+            Math.max(...findings.traitCountSweep.apecsBeforeDistinctSources.ns) /
+              Math.max(...findings.traitCountSweep.apecs),
           )}</div>
-          <p><strong>The ergonomic tier past four traits.</strong> V8's inline caches hold four
-          shapes; <code>chunks</code> is immune.</p>
+          <p><strong>Faster at eight traits</strong> than before generated sources were made
+          distinct. The ergonomic tier no longer moves with trait count at all.</p>
         </div>
       </div>
     </section>
@@ -869,18 +881,25 @@ const body = `
     </section>
     <section>
       <div class="section-head">
-        <div class="label">Known gap</div>
-        <h2>The five-trait cliff</h2>
+        <div class="label">Closed gap</div>
+        <h2>The five-trait cliff, and what it really was</h2>
         <p>
-          V8's inline caches hold four shapes. Add a fifth trait to a per-entity ergonomic accessor
-          and the shared dispatch site goes megamorphic. Nanoseconds per entity visit, one trait
-          count per process — sweeping inside one process lets earlier shapes pollute the site and
-          manufactures the cliff early.
+          V8's inline caches hold four shapes, and apecs's ergonomic tier used to tip over at the
+          fifth trait — from ${num(findings.traitCountSweep.apecsBeforeDistinctSources.ns[0], 1)} ns
+          per entity visit to ${num(
+            findings.traitCountSweep.apecsBeforeDistinctSources.ns.at(-1),
+            1,
+          )}. It is now flat at ~${num(
+            findings.traitCountSweep.apecs.at(-1),
+            1,
+          )} ns through eight. Nanoseconds
+          per entity visit, one trait count per process — sweeping inside one process lets earlier
+          shapes pollute the site and manufactures the cliff whether or not it is there.
         </p>
       </div>
       <div class="legend">
         <span><i class="key s-apecs"></i>apecs <code>each</code></span>
-        <span><i class="key s-apecs dash"></i>apecs <code>chunks</code></span>
+        <span><i class="key s-apecs dash"></i>apecs <code>chunks</code> · before the fix</span>
         <span><i class="key s-bitecs"></i>bitECS</span>
         <span><i class="key s-koota"></i>koota</span>
         <span><i class="key s-becsy"></i>becsy</span>
@@ -889,16 +908,20 @@ const body = `
         <div class="frame">${cliffChart()}</div>
         <figcaption>
           Nanoseconds per entity visit against the number of distinct traits a program uses with the
-          ergonomic API. apecs is the fastest of the four below five traits and the worst hit above
-          it; becsy has the same cliff in the same place; koota starts an order of magnitude behind
-          and stays flat; bitECS has no per-component dispatch to go megamorphic.
+          ergonomic API. apecs is now the fastest ergonomic tier at every trait count — bitECS's
+          flat ~1.5 ns is its raw array API, not an ergonomic one. becsy still has the cliff in the
+          same place; koota starts an order of magnitude behind and stays flat.
         </figcaption>
       </figure>
       <div class="note">
-        <span class="label lab">Against the spec</span>
-        SPEC §12.2 rule 2 asks for “no megamorphic call sites in the iteration path: cursor classes
-        are per-trait, not shared.” Per-trait cursor classes are exactly what makes the shared
-        dispatch site polymorphic. <code>chunks</code> is immune — flat at
+        <span class="label lab">What it was</span>
+        Not the trait count. apecs generates a driver per query and an accessor class per trait so
+        the hot sites inside them stay monomorphic (SPEC §12.2 rule 2) — but the generated sources
+        were identical text, and V8 keys its compilation cache on source text, so every one of those
+        <code>new&nbsp;Function</code> calls returned the same <code>SharedFunctionInfo</code> and
+        the closures shared one feedback vector. The per-query codegen was real; the specialisation
+        it bought was not. A marker comment that makes each source unlike any other
+        (<code>distinct()</code>) is the whole fix. <code>chunks</code> was always immune — flat at
         ${num(findings.traitCountSweep.apecsChunks.ns[0], 2)}–${num(
           Math.max(...findings.traitCountSweep.apecsChunks.ns),
           2,

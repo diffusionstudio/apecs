@@ -15,7 +15,7 @@ allocation per entity and no per-frame matching work.
 It ships React and Solid bindings, a scheduler, relations, change detection, and sorted iteration —
 each with a documented cost.
 
-- **Lightweight** — ≈ 17 kB min+gzip for the complete core, everything imported. The package is
+- **Lightweight** — ≈ 18 kB min+gzip for the complete core, everything imported. The package is
   side-effect free, so a bundler drops what you do not import.
 - **Zero dependencies** — nothing at runtime. `react` and `solid-js` are optional peers, needed only
   by the bindings that use them.
@@ -103,7 +103,7 @@ Measured on an Apple M1, Node v20.19.0, against bitECS 0.4.0, koota 0.6.6 and be
 hand-written typed-array loop as the floor. One process per library per benchmark, minimum of three
 full runs, every library at its own fastest correct idiom, and an entity-count census that aborts
 the run if the libraries are not doing the same work. Full method and every number:
-[benchmark report](reports/2026-09-05-apecs-benchmark.html) ·
+[benchmark report](reports/2026-09-06-apecs-benchmark.html) ·
 [table](bench/compare/REPORT.md).
 
 One caveat about the word "baseline", because two different hand-written loops carry the name here.
@@ -133,9 +133,9 @@ lookups against a flat array's one.
 </picture>
 
 `each` hands you a small object per trait with `.x` / `.y` properties; `chunks` hands you the typed
-arrays themselves. The ergonomic tier costs about 2× the raw one on everything but the smallest
-benchmark, where per-call overhead dominates a 5 µs frame. That is the number to weigh when deciding
-whether a loop needs to drop down.
+arrays themselves. The ergonomic tier costs about 2× the raw one — on every benchmark in the set,
+including the 5 µs ones. That is the number to weigh when deciding whether a loop needs to drop
+down.
 
 ### Bytes per entity
 
@@ -148,18 +148,11 @@ A world of entities carrying `Position` + `Velocity` — two `f32` fields each, 
 payload itself. Everything above that is ids, masks, archetype bookkeeping and query caches.
 At a million entities: 38 MB, against 155 MB for the next-lightest library measured.
 
-### Known limits
+### Known limit
 
-Two, stated plainly.
-
-- **Access by handle** (`world.get(e, …)`, accessors) is about 13× a flat typed array indexed by
-  entity id. If a workload is dominated by random access rather than iteration, a sparse-set ECS
-  will beat apecs on it.
-- **`each` past four traits.** JavaScript engines specialise a call site for up to four object
-  shapes. A program that uses five or more distinct traits through `each` pushes that site past the
-  limit, and per-entity cost goes from ~2 ns to ~38 ns. `chunks` is unaffected — flat at ~1.2 ns
-  through eight traits — so this is a reason to use `chunks` in the systems that matter, not a
-  reason to avoid `each`.
+One, stated plainly. **Access by handle** (`world.get(e, …)`, accessors) is about 13× a flat typed
+array indexed by entity id. If a workload is dominated by random access rather than iteration, a
+sparse-set ECS will beat apecs on it.
 
 ---
 
@@ -254,13 +247,29 @@ world.remove(Time);
 world.entity; // the handle, if you want it
 ```
 
-`World` is a plain class, and subclassing is the intended way to extend it:
+`World` is a plain class, and subclassing is the intended way to extend it
 
 ```ts
 class Game extends World {
-  readonly rng = new Rng(1234);
-  constructor() {
+  public readonly rng = new Rng(1234);
+
+  public constructor() {
     super({ pageSize: 8192 });
+    this.add(Time);
+  }
+
+  // Actions: one named place for each way the world changes.
+  public spawnPlayer(x: number, y: number): Entity {
+    return this.spawn(Position({ x, y }), Velocity, Health, IsPlayer);
+  }
+
+  public damage(entity: Entity, amount: number): void {
+    const hp = this.get(entity, Health.current) - amount;
+    this.set(entity, Health.current, Math.max(0, hp));
+  }
+
+  public reset(): void {
+    this.clear();
     this.add(Time);
   }
 }
@@ -319,8 +328,25 @@ world.query(Health, IsEnemy).each((hp, e) => {
 
 Only data-bearing terms contribute arguments. Tags, `Not` and `With` contribute none; `Optional`
 contributes one that may be `null`. This is enforced by the types. A trait declared with a factory
-yields the reference itself rather than a cursor. The objects `each` hands you are **borrowed** —
+hands back the reference itself rather than a cursor. The objects `each` hands you are **borrowed** —
 holding one past the callback is a development-build error.
+
+**Return `false` to stop the walk**, which is `break`: the rest of the page, the rest of the
+archetype and every archetype after it are skipped, and the walk closes as a completed one does — so
+deferred work still drains.
+
+```ts
+world.query(Position).each((p, e) => {
+  if (p.x > limit) {
+    return found(e); // any other value keeps going
+  }
+  return false;
+});
+```
+
+The test is `=== false`, so neither a bare `return` nor the number an expression body like
+`(p, v) => (p.x += v.x * dt)` evaluates to can stop a walk by accident. The check lives in the row
+loop and costs under 1% — 0.560 ms against 0.557 ms over 100 000 entities, inside run-to-run noise.
 
 **`chunks`** hands back the typed arrays. A chunk is one page of one matching table; every column in
 it is index-aligned with `chunk.entities`.
