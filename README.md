@@ -24,6 +24,8 @@ It ships React and Solid bindings, a scheduler, relations, change detection, and
 - **Lightweight:** 18 kB min+gzip. The package is side-effect free, so a bundler drops what you do not import
 - **Zero dependencies:** `react` and `solid-js` are optional peers
 - **High performance:** The fastest of the four JS/TS ECS libraries measured on five of eight benchmarks
+- **Ergonomic and safe:** The API removes the classic ECS footguns rather than documenting them, and
+  the ergonomic tier is still the fastest one measured
 - **Memory efficient:** 38 bytes per entity for `Position` + `Velocity`, where the field data
   itself is 16 and the next-lightest library measured charges 155 bytes
 
