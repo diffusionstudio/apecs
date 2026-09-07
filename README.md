@@ -5,9 +5,10 @@
 <p align="center">An archetype ECS for performance critical TypeScript applications.</p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/apecs"><img alt="npm" src="https://img.shields.io/npm/v/apecs.svg?color=0079db&label=npm"></a>
-  <a href="#license"><img alt="license" src="https://img.shields.io/badge/license-MIT-0079db.svg"></a>
-  <a href="#requirements"><img alt="node" src="https://img.shields.io/badge/node-%E2%89%A520.19-0079db.svg"></a>
+  <a href="https://discord.com/invite/zPQJrNGuFB"><img src="https://img.shields.io/discord/1115673443141156924?style=flat&logo=discord&logoColor=F8F8F8&label=Discord&labelColor=000000&color=161616" alt="Discord" /></a>
+  <a href="https://x.com/diffusionhq"><img src="https://img.shields.io/badge/Follow%20for-Updates-161616?style=flat&logo=x&logoColor=F8F8F8&labelColor=000000" alt="Follow on X" /></a>
+  <a href="https://www.ycombinator.com/companies/diffusion-studio"><img src="https://img.shields.io/badge/Combinator-F24-161616?style=flat&logo=ycombinator&logoColor=F8F8F8&labelColor=000000" alt="Y Combinator F24" /></a>
+  <a href="#license"><img src="https://img.shields.io/badge/License-MIT-161616?style=flat&labelColor=000000" alt="MIT license" /></a>
 </p>
 
 An **Entity Component System** stores the application state as flat tables instead of object
