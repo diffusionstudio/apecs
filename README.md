@@ -42,7 +42,7 @@ Optional, install the agent skill, so Claude Code and compatible agents know the
 trade-offs:
 
 ```bash
-npx skills add @diffusionstudio/apecs
+npx skills add diffusionstudio/apecs
 ```
 
 ---
