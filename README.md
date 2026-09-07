@@ -1,37 +1,41 @@
-# apecs
+<p align="center">
+  <img alt="apecs" src="assets/apecs-header.png" width="100%">
+</p>
 
-A high-performance archetype ECS for TypeScript.
+<p align="center">An archetype ECS for performance critical TypeScript applications.</p>
 
-[![npm](https://img.shields.io/npm/v/apecs.svg?color=0079db&label=npm)](https://www.npmjs.com/package/apecs)
-[![license](https://img.shields.io/badge/license-MIT-0079db.svg)](#license)
-[![node](https://img.shields.io/badge/node-%E2%89%A520.19-0079db.svg)](#requirements)
+<p align="center">
+  <a href="https://www.npmjs.com/package/apecs"><img alt="npm" src="https://img.shields.io/npm/v/apecs.svg?color=0079db&label=npm"></a>
+  <a href="#license"><img alt="license" src="https://img.shields.io/badge/license-MIT-0079db.svg"></a>
+  <a href="#requirements"><img alt="node" src="https://img.shields.io/badge/node-%E2%89%A520.19-0079db.svg"></a>
+</p>
 
-An **Entity Component System** stores game or simulation state as flat tables instead of object
+An **Entity Component System** stores the application state as flat tables instead of object
 graphs. Data of one kind lives in one contiguous array, and a "system" is a loop over that array.
-apecs is a TypeScript implementation of that idea: entities are plain numbers, component data lives
+
+Apecs is a TypeScript implementation of that idea: entities are plain numbers, component data lives
 in typed arrays, and iterating a query compiles down to a linear scan over those arrays with no
 allocation per entity and no per-frame matching work.
 
-It ships React and Solid bindings, a scheduler, relations, change detection, and sorted iteration —
-each with a documented cost.
+It ships React and Solid bindings, a scheduler, relations, change detection, and sorted iteration.
 
-- **Lightweight** — ≈ 18 kB min+gzip for the complete core, everything imported. The package is
-  side-effect free, so a bundler drops what you do not import.
-- **Zero dependencies** — nothing at runtime. `react` and `solid-js` are optional peers, needed only
-  by the bindings that use them.
-- **High performance** — the fastest of the four ECS libraries measured on five of eight benchmarks,
-  and a 100 000-entity integrate pass through `chunks` runs at 0.97× a hand-written typed-array
-  loop over the same data.
-- **Memory efficient** — 38 bytes per entity for `Position` + `Velocity`, where the field data
-  itself is 16 and the next-lightest library measured charges 155.
+## Why choose Apecs?
+
+- **Lightweight:** 18 kB min+gzip. The package is side-effect free, so a bundler drops what you do not import
+- **Zero dependencies:** `react` and `solid-js` are optional peers
+- **High performance:** The fastest of the four JS/TS ECS libraries measured on five of eight benchmarks
+- **Memory efficient:** 38 bytes per entity for `Position` + `Velocity`, where the field data
+  itself is 16 and the next-lightest library measured charges 155 bytes
 
 Every figure above is measured, and [Benchmarks](#benchmarks) says on what.
+
+## Installation 
 
 ```bash
 npm install apecs
 ```
 
-Optional — install the agent skill, so Claude Code and compatible agents know the API and its
+Optional, install the agent skill, so Claude Code and compatible agents know the API and its
 trade-offs:
 
 ```bash
@@ -59,7 +63,7 @@ import { World, Trait, f32 } from 'apecs';
 // Traits are declared once, at module scope.
 const Position = new Trait({ x: f32(0), y: f32(0) });
 const Velocity = new Trait({ x: f32(0), y: f32(0) });
-const IsEnemy = new Trait(); // no data — a tag
+const IsEnemy = new Trait(); // no data, a tag
 const Time = new Trait({ delta: 0 });
 
 const world = new World();
@@ -99,19 +103,9 @@ Three things are worth knowing before anything else.
 
 ## Benchmarks
 
-Measured on an Apple M1, Node v20.19.0, against bitECS 0.4.0, koota 0.6.6 and becsy 0.15.5, with a
-hand-written typed-array loop as the floor. One process per library per benchmark, minimum of three
-full runs, every library at its own fastest correct idiom, and an entity-count census that aborts
-the run if the libraries are not doing the same work. Full method and every number:
-[benchmark report](reports/2026-09-06-apecs-benchmark.html) ·
+Apple M1, Node v20.19.0, against bitECS 0.4.0, koota 0.6.6 and becsy 0.15.5, with a hand-written
+typed-array loop as the floor. Full method and every number: [report](reports/2026-09-06-apecs-benchmark.html) ·
 [table](bench/compare/REPORT.md).
-
-One caveat about the word "baseline", because two different hand-written loops carry the name here.
-The charts below divide by the comparison harness's baseline; the 0.97× quoted above comes from the
-in-repo budget suite, whose baseline is a class method rather than a closure over captured arrays
-and measures roughly twice as slow for the same arithmetic. apecs's own figure is the same either
-way — 252 µs against 254 µs — so only the floor differs. Library-against-library comparison in the
-charts is unaffected, since every library is divided by the same one.
 
 ### Against the field
 
@@ -120,22 +114,20 @@ charts is unaffected, since every library is divided by the same one.
   <img alt="Every benchmark and library as a multiple of the hand-written baseline" src="assets/bench-baseline-light.svg">
 </picture>
 
-Every cell is a multiple of the hand-written floor; the outlined cell is the fastest library in that
-row. Column-shaped work — iteration, query matching — is where an archetype layout wins. Work that
-touches one entity at a time is where it loses: reaching an entity by handle costs three dependent
-lookups against a flat array's one.
+Each cell is a multiple of the hand-written floor; the outlined cell is the fastest in its row.
+Column-shaped work, i.e. iteration and query matching, is where an archetype layout wins. Access by handle
+(`world.get(e, …)`, accessors) is where it loses: about 13× a flat typed array indexed by entity id.
+A workload dominated by random access rather than iteration is better served by a sparse-set ECS.
 
-### What the escape hatch buys
+### Ergonomic vs. raw API
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/bench-tiers-dark.svg">
   <img alt="apecs ergonomic tier against its raw tier, microseconds" src="assets/bench-tiers-light.svg">
 </picture>
 
-`each` hands you a small object per trait with `.x` / `.y` properties; `chunks` hands you the typed
-arrays themselves. The ergonomic tier costs about 2× the raw one — on every benchmark in the set,
-including the 5 µs ones. That is the number to weigh when deciding whether a loop needs to drop
-down.
+`each` hands you a small object per trait; `chunks` hands you the typed arrays themselves. The
+ergonomic tier costs about 2× the raw one on every benchmark in the set.
 
 ### Bytes per entity
 
@@ -144,15 +136,9 @@ down.
   <img alt="Bytes per entity" src="assets/bench-bytes-light.svg">
 </picture>
 
-A world of entities carrying `Position` + `Velocity` — two `f32` fields each, so 16 bytes is the
-payload itself. Everything above that is ids, masks, archetype bookkeeping and query caches.
-At a million entities: 38 MB, against 155 MB for the next-lightest library measured.
-
-### Known limit
-
-One, stated plainly. **Access by handle** (`world.get(e, …)`, accessors) is about 13× a flat typed
-array indexed by entity id. If a workload is dominated by random access rather than iteration, a
-sparse-set ECS will beat apecs on it.
+Entities carrying `Position` + `Velocity`, 16 bytes of payload. Everything above that is ids, masks,
+archetype bookkeeping and query caches. At a million entities: 38 MB against 155 MB for the
+next-lightest library.
 
 ---
 
@@ -164,9 +150,9 @@ the defaults.
 ```ts
 import { Trait, f32, u16 } from 'apecs';
 
-const Position = new Trait({ x: f32(0), y: f32(0) }); // struct — one typed array per field
+const Position = new Trait({ x: f32(0), y: f32(0) }); // struct: one typed array per field
 const Health = new Trait({ current: 100, max: 100 }); // bare numbers → Float64Array
-const IsActive = new Trait(); // tag — no storage at all
+const IsActive = new Trait(); // tag: no storage at all
 const Mesh = new Trait(() => new THREE.Mesh()); // factory → one boxed column
 ```
 
@@ -181,7 +167,7 @@ column order and is stable.
 | `u8/u16/u32(0)`     | `Uint8Array`, `Uint16Array`, `Uint32Array` |                               |
 | `false`, `bool(v)`  | `Uint8Array`                               | read and written as `boolean` |
 | `''`, `str(v)`      | `Array<string>`                            | boxed                         |
-| `eid(0)`            | `Float64Array`                             | an entity handle — see below  |
+| `eid(0)`            | `Float64Array`                             | an entity handle, see below   |
 | a factory `() => T` | `Array<T>`                                 | one reference per entity      |
 
 The markers are typed as their underlying primitive, so `Position.x` is a `number` to TypeScript and
@@ -221,7 +207,7 @@ world.remove(e, Velocity);
 world.has(e, Position);
 ```
 
-Adding or removing a trait moves the entity's row to the archetype — the storage table — for its new
+Adding or removing a trait moves the entity's row to the archetype (the storage table) for its new
 trait set. That is a couple of map lookups plus a row copy, not a rehash of the world.
 
 **Bulk operations do one transition for the whole set** rather than one per entity, which is a large
@@ -235,8 +221,8 @@ world.despawnMany(swarm);
 world.despawnMany(world.query(Dead)); // a query result is a valid batch
 ```
 
-**The world is an entity too.** Id 1 in every world is the world entity, and world-level state —
-time, score, paused, the current selection — is an ordinary trait on it. Omitting the entity
+**The world is an entity too.** Id 1 in every world is the world entity, and world-level state such as
+time, score, paused or the current selection is an ordinary trait on it. Omitting the entity
 argument targets it:
 
 ```ts
@@ -297,13 +283,13 @@ make, so each row is honest about what it costs.
 returns a _copy_, so it allocates; pass an `out` object or read a single field to avoid that.
 
 ```ts
-world.get(e, Position); // { x, y } — a copy
+world.get(e, Position); // { x, y }, a copy
 world.get(e, Position, out); // writes into `out`, returns it
 world.set(e, Position, { x: 5 }); // partial write; fires 'change' observers
 ```
 
 **Accessors** do the resolution once and keep it. They are the per-entity escape hatch: pathfinding,
-physics callbacks, networking — anything addressing entities by handle in an order no query can
+physics callbacks, networking, anything addressing entities by handle in an order no query can
 provide.
 
 ```ts
@@ -321,18 +307,18 @@ world.query(Position, Velocity).each((p, v) => {
 });
 
 world.query(Health, IsEnemy).each((hp, e) => {
-  // IsEnemy is a tag — it contributes no argument
+  // IsEnemy is a tag, it contributes no argument
   if (hp.current <= 0) world.defer(() => world.despawn(e));
 });
 ```
 
 Only data-bearing terms contribute arguments. Tags, `Not` and `With` contribute none; `Optional`
 contributes one that may be `null`. This is enforced by the types. A trait declared with a factory
-hands back the reference itself rather than a cursor. The objects `each` hands you are **borrowed** —
+hands back the reference itself rather than a cursor. The objects `each` hands you are **borrowed**;
 holding one past the callback is a development-build error.
 
 **Return `false` to stop the walk**, which is `break`: the rest of the page, the rest of the
-archetype and every archetype after it are skipped, and the walk closes as a completed one does — so
+archetype and every archetype after it are skipped, and the walk closes as a completed one does, so
 deferred work still drains.
 
 ```ts
@@ -346,7 +332,7 @@ world.query(Position).each((p, e) => {
 
 The test is `=== false`, so neither a bare `return` nor the number an expression body like
 `(p, v) => (p.x += v.x * dt)` evaluates to can stop a walk by accident. The check lives in the row
-loop and costs under 1% — 0.560 ms against 0.557 ms over 100 000 entities, inside run-to-run noise.
+loop and costs under 1%: 0.560 ms against 0.557 ms over 100 000 entities, inside run-to-run noise.
 
 **`chunks`** hands back the typed arrays. A chunk is one page of one matching table; every column in
 it is index-aligned with `chunk.entities`.
@@ -359,17 +345,17 @@ for (const chunk of world.query(Position, Velocity).chunks()) {
     x[i] += vx[i] * dt;
     y[i] += vy[i] * dt;
   }
-  chunk.markChanged(Position); // the setters were bypassed — say so explicitly
+  chunk.markChanged(Position); // the setters were bypassed, say so explicitly
 }
 ```
 
 This tier does no change tracking and no liveness checks. That is the trade, and `markChanged` is
 the part that is easy to forget: without it, `Changed()` filters miss the write and sorted views do
 not re-sort. Development builds warn; production is silent. Views handed out by `chunk.get` are
-valid only for the current step — do not keep them.
+valid only for the current step; do not keep them.
 
 `markChanged` stamps change ticks; it fires no observers. The whole-page form above writes the
-current tick across the page's tick array, which suits the usual chunk loop — one that writes every
+current tick across the page's tick array, which suits the usual chunk loop, one that writes every
 row. When only some rows were written, pass the row so `Changed()` does not over-report:
 
 ```ts
@@ -406,12 +392,12 @@ const q = world.query(Position, Velocity);
 
 q.count; // number of matching entities
 q.isEmpty;
-q.first; // Entity | undefined — world.queryFirst(...) is sugar for this
+q.first; // Entity | undefined; world.queryFirst(...) is sugar for this
 for (const e of q) {
 } // Tier 1: handles, read values through the world
 q.each((p, v, e) => {});
 q.chunks();
-q.entities(); // Float64Array snapshot — safe to mutate the world while walking it
+q.entities(); // Float64Array snapshot, safe to mutate the world while walking it
 ```
 
 `world.createQuery(...)` is the same object under an explicit name, with a `dispose()` when you want
@@ -433,7 +419,7 @@ world.query(Sprite).sortBy((a, b) => /* … */ 0); // comparator form
 ```
 
 **`orderBy`** instead rearranges the rows in storage so that row order _is_ key order. It supports
-everything, `chunks` included, because there is nothing extra in the path — but it mutates rows that
+everything, `chunks` included, because there is nothing extra in the path. But it mutates rows that
 every other query over that table sees, and the order is guaranteed per table, not globally. Use
 `sortBy` when the order must be total.
 
@@ -447,8 +433,8 @@ Both track two levels of staleness: a changed sort key costs a linear re-sort, a
 of matching entities costs a rebuild. A frame in which nothing moved costs one comparison per
 matching table and nothing else.
 
-When the key comes from something apecs cannot observe — a clock, a camera, a comparator closing
-over mutable state — say so:
+When the key comes from something apecs cannot observe, such as a clock, a camera or a comparator closing
+over mutable state, say so:
 
 ```ts
 sorted.isDirty; // 'clean' | 'resort' | 'rebuild'
@@ -474,14 +460,14 @@ world.add(child, Likes(other, { amount: 5 }));
 world.query(ChildOf(parent)); // children of one parent
 world.query(ChildOf('*')); // anything with a parent
 world.query(Position, Not(ChildOf('*'))); // roots
-world.target(child, ChildOf); // Entity — 0 when absent
+world.target(child, ChildOf); // Entity, 0 when absent
 world.targets(e, Likes); // Entity[]
 ```
 
 **Set `exclusive: true` whenever an entity has at most one target.** An exclusive relation stores the
 target in a column with an index beside it: one storage table however many parents exist, and
 re-targeting costs no table move at all. A non-exclusive relation instead gives every distinct
-`(relation, target)` pair its own id — correct for `Likes` or `Owes`, and a problem at high fan-out.
+`(relation, target)` pair its own id. That is correct for `Likes` or `Owes`, and a problem at high fan-out.
 Development builds warn when one grows past a threshold.
 
 `onTargetDespawn` decides what happens to an entity whose target dies: `'remove'` (the default) drops
@@ -504,7 +490,7 @@ world.query(Position, LocalTransform, Cascade(ChildOf)).each((pos, local) => {
 
 Two mechanisms, for two different questions.
 
-**Push — observers.** Dispatched synchronously, inside the write. Every call returns its
+**Push: observers.** Dispatched synchronously, inside the write. Every call returns its
 unsubscribe.
 
 ```ts
@@ -520,7 +506,7 @@ world.on('exit', world.query(Position, IsActive), (entity) => {});
 `'enter'` / `'exit'` are usually what you actually want: "started matching this whole query", not
 "one trait changed".
 
-**Pull — change ticks.** The world holds a counter that `world.step()` advances. `Changed`, `Added`
+**Pull: change ticks.** The world holds a counter that `world.step()` advances. `Changed`, `Added`
 and `Removed` compare against it, which is a scan of a `Uint32Array` with no calls in it. Each such
 query remembers its own last-seen tick, so two systems watching the same trait do not consume each
 other's events.
@@ -530,16 +516,16 @@ world.step();
 world.query(Position, Changed(Position)).each((p) => {});
 ```
 
-At scale, prefer pull. Tick storage is allocated only for traits that need it — a trait becomes
-tracked on its first `'change'` subscription, first `Changed()` use, first `sortBy`, or with
-`new Trait(schema, { track: true })` — so untracked traits pay nothing per write.
+At scale, prefer pull. Tick storage is allocated only for traits that need it, so untracked traits
+pay nothing per write. A trait becomes tracked on its first `'change'` subscription, first
+`Changed()` use, first `sortBy`, or with `new Trait(schema, { track: true })`.
 
 Ticks are written by `world.set`, by accessors, and by the objects `each` hands out. **Direct chunk
 writes bypass them**; call `chunk.markChanged(trait, row?)` for a page or a row, or
 `world.markChanged(e, trait)` for one entity by handle.
 
 The two are not interchangeable. `world.markChanged` also fires `'change'` observers, exactly as
-`world.set` does. `chunk.markChanged` only stamps ticks — nothing is dispatched, whether you mark a
+`world.set` does. `chunk.markChanged` only stamps ticks; nothing is dispatched, whether you mark a
 row or the page. So a value written through `chunks` reaches `Changed()` filters and sorted views,
 but never reaches a `'change'` observer or, therefore, a mounted React or Solid binding.
 
@@ -573,7 +559,7 @@ mutation; production builds do not.
 
 ## The frame
 
-Systems are plain functions of the world. Drive them by hand, or with a `Schedule` — a list of named
+Systems are plain functions of the world. Drive them by hand, or with a `Schedule`, a list of named
 systems with `before` / `after` constraints, resolved once into a fixed order.
 
 ```ts
@@ -640,7 +626,7 @@ Two things to internalise:
 1. **Systems iterate; components read single values.** Never call `each` or `chunks` in a render
    function.
 2. **Anything that changes every frame does not belong in a re-render.** Use the imperative
-   subscription (`useOn` / `on`) and write into a ref or a canvas — that is what it is for.
+   subscription (`useOn` / `on`) and write into a ref or a canvas; that is what it is for.
 
 `useEntity` / `createEntity` spawn on mount and despawn on unmount. Under React StrictMode, effects
 are double-invoked, so a mount burns one entity id.
@@ -737,7 +723,7 @@ useTarget  useParent  useChildren
 useAccessor  useEntity  useOn
 ```
 
-`<WorldProvider world={world} flush="frame" />` — `flush` is `'frame'` (default), `'microtask'` or
+`<WorldProvider world={world} flush="frame" />`. `flush` is `'frame'` (default), `'microtask'` or
 `'sync'`, and is the bindings' only configuration.
 
 ### `apecs/solid`
@@ -773,7 +759,7 @@ semantics, roughly 2–3× slower.
 | Page size                          | power of two, default 4096 |
 
 Not yet included: worker parallelism, serialization and devtools. The storage layout is built to
-allow all three without an API break — columns and the entity index are typed arrays throughout, so
+allow all three without an API break: columns and the entity index are typed arrays throughout, so
 a page's backing store can become a `SharedArrayBuffer` without a rewrite.
 
 ## License

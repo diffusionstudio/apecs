@@ -1,4 +1,4 @@
-# apecs × canvas — text flow
+# apecs × canvas — GPU reader
 
 _Attention Is All You Need_, one entity per `Intl.Segmenter` token, laid out from scratch every
 frame and drawn with the 2D context. Three spheres bounce around the window; the text has to make
