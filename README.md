@@ -32,7 +32,7 @@ It ships React and Solid bindings, a scheduler, relations, change detection, and
 
 Every figure above is measured, and [Benchmarks](#benchmarks) says on what.
 
-## Installation 
+## Installation
 
 ```bash
 npm install apecs
